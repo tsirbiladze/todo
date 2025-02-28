@@ -19,3 +19,47 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+body.modal-open {
+  overflow: hidden;
+}
+
+/* Date and time input styling for dark mode */
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: light dark;
+}
+
+/* In dark mode, ensure calendar popup has dark colors */
+@media (prefers-color-scheme: dark) {
+  input[type="date"],
+  input[type="datetime-local"] {
+    color-scheme: dark;
+  }
+}
+
+/* Support for class-based dark mode */
+.dark input[type="date"],
+.dark input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+/* Loading animation keyframes */
+@keyframes progress {
+  0% {
+    width: 0%;
+    margin-left: 0%;
+  }
+  50% {
+    width: 30%;
+    margin-left: 70%;
+  }
+  100% {
+    width: 0%;
+    margin-left: 100%;
+  }
+}
+
+.animate-progress {
+  animation: progress 1.5s ease-in-out infinite;
+}
