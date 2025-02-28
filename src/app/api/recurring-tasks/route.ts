@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { RecurrenceFrequency } from '@prisma/client';
 import { addDays, addWeeks, addMonths, addYears, format } from 'date-fns';
+import { calculateNextOccurrence, generateOccurrences } from './utils';
 
 interface RecurringTaskInput {
   templateId: string;
@@ -143,6 +144,7 @@ async function generateTaskFromTemplate(
   }
 }
 
+// Create a new recurring task
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -182,25 +184,8 @@ export async function POST(request: Request) {
     }
 
     // Create or update recurring task schedule
-    const recurringTask = await prisma.recurringTask.upsert({
-      where: {
-        templateId_userId: {
-          templateId,
-          userId: user.id,
-        },
-      },
-      update: {
-        nextDueDate: new Date(nextDueDate),
-        frequency,
-        interval,
-        daysOfWeek,
-        dayOfMonth,
-        monthOfYear,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        count,
-      },
-      create: {
+    const recurringTask = await prisma.recurringTask.create({
+      data: {
         templateId,
         userId: user.id,
         nextDueDate: new Date(nextDueDate),
@@ -217,15 +202,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ recurringTask });
   } catch (error) {
-    console.error('Error managing recurring task:', error);
+    console.error('Error creating recurring task:', error);
     return NextResponse.json(
-      { error: 'Failed to manage recurring task' },
+      { error: 'Failed to create recurring task' },
       { status: 500 }
     );
   }
 }
 
-// Generate tasks for recurring tasks that are due
+// Fetch all recurring tasks for the current user
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -250,69 +235,120 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get all recurring tasks for the user that are due
+    // Get preview parameter
+    const preview = req.nextUrl.searchParams.get('preview') === 'true';
+    
+    // Get all recurring tasks for the user
     const recurringTasks = await prisma.recurringTask.findMany({
       where: {
         userId: user.id,
-        nextDueDate: {
-          lte: new Date(),
-        },
+      },
+      include: {
+        template: {
+          include: {
+            categories: true
+          }
+        }
+      },
+      orderBy: {
+        nextDueDate: 'asc',
       },
     });
 
-    const generatedTasks = [];
-
-    // Generate tasks for each due recurring task
-    for (const recurringTask of recurringTasks) {
-      try {
-        // Generate task
-        const task = await generateTaskFromTemplate(
-          user.id,
-          recurringTask.templateId,
-          recurringTask.id,
-          recurringTask.nextDueDate
-        );
-        
-        generatedTasks.push(task);
-        
-        // Calculate next occurrence
-        const nextDueDate = calculateNextOccurrence(
-          recurringTask.nextDueDate,
-          recurringTask.frequency,
-          recurringTask.interval,
-          recurringTask.daysOfWeek || undefined,
-          recurringTask.dayOfMonth || undefined,
-          recurringTask.monthOfYear || undefined
-        );
-        
-        // Update recurring task with new next due date
-        await prisma.recurringTask.update({
-          where: { id: recurringTask.id },
-          data: {
-            nextDueDate,
-            lastGeneratedDate: new Date(),
+    // If preview requested, add upcoming occurrences
+    let recurringTasksWithPreviews = recurringTasks;
+    
+    if (preview) {
+      recurringTasksWithPreviews = recurringTasks.map(task => {
+        const previewOccurrences = generateOccurrences(
+          new Date(task.nextDueDate),
+          {
+            frequency: task.frequency,
+            interval: task.interval,
+            daysOfWeek: task.daysOfWeek,
+            dayOfMonth: task.dayOfMonth,
+            monthOfYear: task.monthOfYear
           },
-        });
-      } catch (error) {
-        console.error(`Error processing recurring task ${recurringTask.id}:`, error);
-        // Continue with other recurring tasks even if one fails
-      }
+          5,
+          task.endDate ? new Date(task.endDate) : undefined
+        );
+        
+        return {
+          ...task,
+          previewOccurrences
+        };
+      });
     }
 
-    return NextResponse.json({ 
-      generatedTasks,
-      count: generatedTasks.length,
-      message: generatedTasks.length > 0 
-        ? `Generated ${generatedTasks.length} tasks`
-        : 'No tasks due for generation'
-    });
+    return NextResponse.json({ recurringTasks: recurringTasksWithPreviews });
   } catch (error) {
-    console.error('Error processing recurring tasks:', error);
+    console.error('Error fetching recurring tasks:', error);
     return NextResponse.json(
-      { error: 'Failed to process recurring tasks' },
+      { error: 'Failed to fetch recurring tasks' },
       { status: 500 }
     );
   }
+}
+
+// Generate a preview of upcoming occurrences
+export async function POST(request: NextRequest) {
+  // Check URL to distinguish between create and preview
+  if (request.nextUrl.searchParams.get('action') === 'preview') {
+    try {
+      const session = await getServerSession(authOptions);
+      
+      if (!session?.user?.email) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
+
+      const data = await request.json();
+      const { 
+        startDate, 
+        frequency = 'DAILY', 
+        interval = 1,
+        daysOfWeek,
+        dayOfMonth,
+        monthOfYear,
+        endDate,
+        count = 5
+      } = data;
+
+      if (!startDate) {
+        return NextResponse.json(
+          { error: 'Start date is required' },
+          { status: 400 }
+        );
+      }
+
+      // Generate preview occurrences
+      const occurrences = generateOccurrences(
+        new Date(startDate),
+        {
+          frequency: frequency as RecurrenceFrequency,
+          interval,
+          daysOfWeek,
+          dayOfMonth,
+          monthOfYear
+        },
+        count,
+        endDate ? new Date(endDate) : undefined
+      );
+
+      return NextResponse.json({ occurrences });
+    } catch (error) {
+      console.error('Error generating preview:', error);
+      return NextResponse.json(
+        { error: 'Failed to generate preview' },
+        { status: 500 }
+      );
+    }
+  }
+  
+  // Otherwise, treat as normal POST for creating a recurring task
+  return POST(request as unknown as Request);
 }
 
 // Create a new endpoint to get all recurring tasks for the user

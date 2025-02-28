@@ -207,8 +207,17 @@ export const CategoryApi = {
  * Focus session API functions
  */
 export const FocusSessionApi = {
-  getAllSessions: async () => {
-    return apiRequest('/api/focus-sessions');
+  getAllSessions: async (options?: { includeTask?: boolean }) => {
+    const url = new URL('/api/focus-sessions', window.location.origin);
+    
+    // Add params if options are provided
+    if (options) {
+      if (options.includeTask) {
+        url.searchParams.append('includeTask', 'true');
+      }
+    }
+    
+    return apiRequest(url.toString());
   },
   
   createSession: async (sessionData: any) => {

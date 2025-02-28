@@ -15,7 +15,8 @@ import {
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
   BellIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
 import { Transition } from '@headlessui/react';
@@ -25,6 +26,7 @@ const navItems = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Focus', href: '/focus', icon: ClockIcon },
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon },
+  { name: 'Recurring Tasks', href: '/recurring-tasks', icon: ArrowPathIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 

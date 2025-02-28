@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { PomodoroTimer } from '@/components/PomodoroTimer';
+import { getFocusText } from '@/lib/focus-utils';
+import { TaskApi, FocusSessionApi } from '@/lib/api';
 import { formatDate, DATE_FORMATS } from '@/lib/date-utils';
 import { Task } from '@prisma/client';
 
@@ -37,12 +39,11 @@ export default function FocusPage() {
   useEffect(() => {
     const fetchFocusSessions = async () => {
       try {
-        const response = await fetch('/api/focus-sessions');
-        if (!response.ok) {
-          throw new Error('Failed to fetch focus sessions');
+        const result = await FocusSessionApi.getAllSessions();
+        if (result.error) {
+          throw new Error(result.error);
         }
-        const data = await response.json();
-        setFocusSessions(data.focusSessions);
+        setFocusSessions(result.data.focusSessions);
       } catch (error) {
         console.error('Error fetching focus sessions:', error);
       } finally {

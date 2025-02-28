@@ -6,12 +6,12 @@ import { AiReminderService, ReminderType } from '@/lib/ai-reminder-service';
 import { TTSService } from '@/lib/tts-service';
 import { Task } from '@prisma/client';
 import { 
-  BoltIcon, 
   XMarkIcon,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
   MicrophoneIcon,
-  StopIcon
+  StopIcon,
+  AdjustmentsHorizontalIcon
 } from '@heroicons/react/24/outline';
 
 interface AIFocusCoachProps {
@@ -43,6 +43,7 @@ export function AIFocusCoach({
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(false);
   const [ttsVoice, setTtsVoice] = useState<'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'>('nova');
+  const [ttsSpeed, setTtsSpeed] = useState<number>(1.0);
   const [showVoiceSettings, setShowVoiceSettings] = useState<boolean>(false);
   
   const reminderTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -181,7 +182,7 @@ export function AIFocusCoach({
       // Initialize audio context (must be after user interaction)
       TTSService.initAudioContext();
       
-      await TTSService.speak(message, ttsVoice);
+      await TTSService.speak(message, ttsVoice, ttsSpeed);
     } catch (error) {
       console.error('Error speaking message:', error);
     } finally {
@@ -249,123 +250,165 @@ export function AIFocusCoach({
   if (!isActive || isHidden) return null;
   
   return (
-    <div className={`bg-white/80 dark:bg-gray-800/90 backdrop-blur-sm rounded-lg p-4 shadow-lg transition-all duration-300 ${className}`}>
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center">
-          <BoltIcon className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-2" />
-          <h3 className="font-medium text-purple-900 dark:text-purple-300">Focus Coach</h3>
-        </div>
-        <div className="flex space-x-2">
-          <button 
-            onClick={() => setIsMuted(!isMuted)}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            aria-label={isMuted ? "Unmute notifications" : "Mute notifications"}
-          >
-            {isMuted ? (
-              <SpeakerXMarkIcon className="h-5 w-5" />
-            ) : (
-              <SpeakerWaveIcon className="h-5 w-5" />
-            )}
-          </button>
-          
-          <button 
-            onClick={toggleTTS}
-            className={`text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 ${
-              ttsEnabled ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded' : ''
-            }`}
-            aria-label={ttsEnabled ? "Disable voice" : "Enable voice"}
-          >
-            {ttsEnabled ? (
-              <MicrophoneIcon className="h-5 w-5" />
-            ) : (
-              <SpeakerXMarkIcon className="h-5 w-5" />
-            )}
-          </button>
-          
-          <button 
-            onClick={handleHide} 
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            aria-label="Hide AI coach"
-          >
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-      
-      {showVoiceSettings && (
-        <div className="mb-3 p-2 bg-gray-100 dark:bg-gray-700 rounded-md">
-          <div className="mb-2">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Voice
-            </label>
-            <select
-              value={ttsVoice}
-              onChange={(e) => setTtsVoice(e.target.value as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer')}
-              className="w-full p-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded"
-            >
-              <option value="nova">Nova (Female)</option>
-              <option value="alloy">Alloy (Neutral)</option>
-              <option value="echo">Echo (Male)</option>
-              <option value="fable">Fable (Male)</option>
-              <option value="onyx">Onyx (Male)</option>
-              <option value="shimmer">Shimmer (Female)</option>
-            </select>
-          </div>
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowVoiceSettings(false)}
-              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-      
-      <div className="min-h-[60px] flex items-center">
-        <TypingAnimation 
-          text={currentMessage}
-          speed={40}
-          onComplete={handleTypingComplete}
-          className="text-gray-800 dark:text-gray-200 text-sm"
-        />
-      </div>
-      
-      <div className="flex justify-between mt-3">
-        <div>
-          {ttsEnabled && (
-            <button
-              onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-              className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300"
-            >
-              Voice settings
-            </button>
+    <div className={`rounded-lg shadow-sm overflow-hidden ${className}`}>
+      <div className="relative">
+        {/* Message Display */}
+        <div className="min-h-[8rem] p-4">
+          {isTyping ? (
+            <TypingAnimation 
+              text={currentMessage} 
+              onComplete={handleTypingComplete} 
+              className="text-gray-700 dark:text-gray-300"
+              speed={60}
+            />
+          ) : (
+            <p className="text-gray-700 dark:text-gray-300">
+              {currentMessage}
+            </p>
           )}
         </div>
         
-        <div className="flex space-x-2">
-          {!isTyping && currentMessage && ttsEnabled && (
-            <>
-              {isSpeaking ? (
-                <button
-                  onClick={stopSpeaking}
-                  className="flex items-center text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded"
-                >
-                  <StopIcon className="h-3 w-3 mr-1" />
-                  Stop
-                </button>
+        {/* Bottom Controls */}
+        <div className="flex justify-between items-center p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          {/* Left Controls */}
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className={`p-1.5 rounded-full ${
+                isMuted
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+              }`}
+              aria-label={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? (
+                <SpeakerXMarkIcon className="h-4 w-4" />
               ) : (
-                <button
-                  onClick={() => speakMessage(currentMessage)}
-                  className="flex items-center text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded"
-                >
-                  <MicrophoneIcon className="h-3 w-3 mr-1" />
-                  Speak
-                </button>
+                <SpeakerWaveIcon className="h-4 w-4" />
               )}
-            </>
-          )}
+            </button>
+            
+            <button
+              onClick={toggleTTS}
+              className={`p-1.5 rounded-full ${
+                ttsEnabled
+                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                  : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+              }`}
+              aria-label={ttsEnabled ? "Disable voice" : "Enable voice"}
+            >
+              <MicrophoneIcon className="h-4 w-4" />
+            </button>
+            
+            {ttsEnabled && (
+              <>
+                <button
+                  onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+                  className={`p-1.5 rounded-full ${
+                    showVoiceSettings
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                      : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                  }`}
+                  aria-label="Voice settings"
+                >
+                  <AdjustmentsHorizontalIcon className="h-4 w-4" />
+                </button>
+                
+                {!isSpeaking && !isTyping && currentMessage && (
+                  <button
+                    onClick={() => speakMessage(currentMessage)}
+                    className="p-1.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                    aria-label="Speak message"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                )}
+                
+                {isSpeaking && (
+                  <button
+                    onClick={stopSpeaking}
+                    className="p-1.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                    aria-label="Stop speaking"
+                  >
+                    <StopIcon className="h-4 w-4" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+          
+          {/* Right Controls */}
+          <button
+            onClick={handleHide}
+            className="p-1.5 rounded-full bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+            aria-label="Hide AI coach"
+          >
+            <XMarkIcon className="h-4 w-4" />
+          </button>
         </div>
+        
+        {/* Voice Settings Panel */}
+        {showVoiceSettings && (
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 animate-fade-in">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Voice
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['nova', 'alloy', 'echo', 'fable', 'onyx', 'shimmer'] as const).map((voice) => (
+                    <button
+                      key={voice}
+                      onClick={() => setTtsVoice(voice)}
+                      className={`text-xs py-1 px-2 rounded-md ${
+                        ttsVoice === voice
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {voice.charAt(0).toUpperCase() + voice.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Speech Speed: {ttsSpeed.toFixed(1)}x
+                </label>
+                <div className="flex items-center">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">0.5x</span>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.1"
+                    value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="flex-grow h-2 rounded-lg appearance-none bg-gray-200 dark:bg-gray-700"
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">2.0x</span>
+                </div>
+              </div>
+              
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    // Speak a test message with current settings
+                    speakMessage("This is a test of the text-to-speech feature with the current voice settings.");
+                  }}
+                  className="text-xs py-1 px-3 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded"
+                  disabled={isSpeaking}
+                >
+                  Test Voice
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -142,6 +142,13 @@ export function PomodoroTimer() {
       // Save focus session
       if (session?.user?.id) {
         try {
+          // Get active task ID from localStorage if available
+          const activeTaskId = localStorage.getItem('activeTaskId');
+          
+          // Get current sound settings from localStorage if available
+          const ambientSound = localStorage.getItem('activeAmbientSound');
+          const brainwaveType = localStorage.getItem('activeBrainwave');
+          
           const response = await fetch('/api/focus-sessions', {
             method: 'POST',
             headers: {
@@ -151,12 +158,26 @@ export function PomodoroTimer() {
               userId: session.user.id,
               duration: Math.floor(actualDuration / 60), // Convert to minutes
               type: 'pomodoro',
+              taskId: activeTaskId || undefined,
+              ambientSound: ambientSound || undefined,
+              brainwaveType: brainwaveType || undefined,
+              notes: `Pomodoro #${newCount} completed`
             }),
           });
           
           if (!response.ok) {
             throw new Error(`Failed to save focus session: ${response.status}`);
           }
+          
+          // Emit an event to notify about the successful focus session
+          const event = new CustomEvent('focusSessionCompleted', {
+            detail: {
+              duration: Math.floor(actualDuration / 60),
+              type: 'pomodoro',
+              count: newCount
+            }
+          });
+          window.dispatchEvent(event);
         } catch (error) {
           console.error('Error saving focus session:', error);
           // Show a toast or notification for error

@@ -71,6 +71,8 @@ const config: Config = {
         shimmer: 'shimmer 2s infinite linear',
         fadeIn: 'fadeIn 0.5s ease-in',
         slideIn: 'slideIn 0.3s ease-out',
+        'fade-in': 'fadeIn 0.5s ease-in',
+        'breathing': 'breathing 4s ease-in-out infinite',
       },
       keyframes: {
         shimmer: {
@@ -85,6 +87,13 @@ const config: Config = {
           '0%': { transform: 'translateY(20px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        breathing: {
+          '0%, 100%': { transform: 'scale(0.8)', opacity: '0.4' },
+          '50%': { transform: 'scale(1.2)', opacity: '0.6' },
+        },
+      },
+      transitionDuration: {
+        '4000': '4000ms',
       },
     },
   },

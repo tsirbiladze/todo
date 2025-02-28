@@ -168,6 +168,7 @@ model Task {
   subtasks         Task[]     @relation("TaskToSubtasks")
   recurringTaskId  String?
   recurringTask    RecurringTask? @relation(fields: [recurringTaskId], references: [id], onDelete: SetNull)
+  focusSessions    FocusSession[]
   history          TaskHistory[] // Relation to the new TaskHistory model
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -201,10 +202,13 @@ model FocusSession {
   type      String   // "pomodoro", "custom"
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
   @@index([userId])
+  @@index([taskId])
 }
 
 model RecurringTask {
