@@ -230,6 +230,124 @@ export async function PUT(
   }
 }
 
+// PATCH /api/tasks/[taskId] - Partially update a task
+export async function PATCH(
+  req: NextRequest,
+  { params }: RouteParams
+): Promise<NextResponse> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    
+    if (!userId) {
+      return errorResponse('Unauthorized', 401);
+    }
+    
+    const taskId = params.taskId;
+    
+    // Check if task exists and belongs to the user
+    const taskOwned = await verifyTaskOwnership(taskId, userId);
+    
+    if (!taskOwned) {
+      return errorResponse('Task not found or unauthorized', 404);
+    }
+    
+    // Get the original task for comparison
+    const originalTask = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { categories: true }
+    });
+    
+    if (!originalTask) {
+      return errorResponse('Task not found', 404);
+    }
+    
+    // Get patch data
+    const patchData = await req.json();
+    
+    // Validate the patch data
+    const { success, data: validatedData, error } = await validateData(
+      updateTaskSchema,
+      patchData
+    );
+    
+    if (!success || !validatedData) {
+      return errorResponse(error || 'Invalid data format', 400);
+    }
+    
+    // Handle category IDs or category objects
+    let categoryIds = validatedData.categoryIds;
+    
+    // If categoryIds isn't present but there's a categories field, use that instead
+    if (!categoryIds && validatedData.categories) {
+      if (Array.isArray(validatedData.categories)) {
+        if (validatedData.categories.length > 0) {
+          // If it's an array of objects with an id property, extract just the IDs
+          if (typeof validatedData.categories[0] === 'object' && validatedData.categories[0].id) {
+            categoryIds = validatedData.categories.map((cat: any) => cat.id);
+          }
+          // If it's already an array of strings, use directly
+          else if (typeof validatedData.categories[0] === 'string') {
+            categoryIds = validatedData.categories;
+          }
+        } else {
+          // Empty array
+          categoryIds = [];
+        }
+      }
+    }
+    
+    // Prepare update data, only including fields that were actually provided
+    const updateData: any = {};
+    
+    // Only include fields that are explicitly provided
+    for (const [key, value] of Object.entries(validatedData)) {
+      if (value !== undefined && key !== 'categories' && key !== 'categoryIds') {
+        updateData[key] = value;
+      }
+    }
+    
+    // Handle categories separately if provided
+    if (categoryIds !== undefined) {
+      updateData.categories = {
+        set: categoryIds.map((id: string) => ({ id }))
+      };
+    }
+    
+    // Perform the update
+    const updatedTask = await prisma.task.update({
+      where: { id: taskId },
+      data: updateData,
+      include: {
+        categories: true,
+        subtasks: true,
+        goal: true
+      }
+    });
+    
+    // Record changes for task history
+    const changes = extractTaskChanges(originalTask, updatedTask);
+    
+    if (Object.keys(changes).length > 0) {
+      await recordTaskChange(
+        taskId,
+        userId,
+        'UPDATED',
+        changes,
+        originalTask
+      );
+    }
+    
+    return NextResponse.json({ task: updatedTask });
+  } catch (error) {
+    logger.error('Error patching task:', {
+      component: 'api/tasks/[taskId]/PATCH',
+      data: error
+    });
+    
+    return errorResponse('Failed to update task', 500);
+  }
+}
+
 // DELETE /api/tasks/[taskId] - Delete a task
 export async function DELETE(
   req: NextRequest,

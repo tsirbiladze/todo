@@ -206,7 +206,7 @@ export function RecurrencePatternSelector({
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Repeat</label>
             <select
-              className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              className="form-select w-full"
               value={pattern.frequency}
               onChange={(e) => handlePatternChange({ frequency: e.target.value as RecurrencePattern['frequency'] })}
             >
@@ -286,7 +286,7 @@ export function RecurrencePatternSelector({
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Month</label>
                 <select
-                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="form-select w-full"
                   value={pattern.monthOfYear || 1}
                   onChange={(e) => handlePatternChange({ monthOfYear: parseInt(e.target.value) })}
                 >

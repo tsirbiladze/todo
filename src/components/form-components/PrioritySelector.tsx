@@ -1,51 +1,79 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { priorityOptions, PriorityOption } from "@/data/priorities";
 import { ArrowsPointingOutIcon } from "@heroicons/react/24/solid";
 import { TaskFormField } from './TaskFormField';
+import { useTranslation } from "@/lib/i18n";
 
 interface PrioritySelectorProps {
-  selectedPriority: number;
-  onPriorityChange: (priority: number) => void;
+  value: number;
+  onChange: (priority: number) => void;
+  onBlur?: () => void;
+  error?: string;
 }
 
-export function PrioritySelector({ selectedPriority, onPriorityChange }: PrioritySelectorProps) {
-  const priorityIcon = useMemo(() => (
-    <ArrowsPointingOutIcon className="h-3.5 w-3.5 text-gray-400 mr-1.5" aria-hidden="true" />
-  ), []);
+/**
+ * PrioritySelector component for selecting task priority
+ * Utilizes Tailwind CSS for responsive layout and styling
+ */
+export function PrioritySelector({ value, onChange, onBlur, error }: PrioritySelectorProps) {
+  const { t } = useTranslation();
+
+  // Function to get dynamic button classes
+  const getButtonClasses = (option: PriorityOption, isSelected: boolean) => {
+    const baseClasses = "px-2 py-1 rounded text-xs font-medium transition-all duration-200 border flex items-center gap-1 flex-1 shadow-sm";
+    
+    if (isSelected) {
+      // For selected option, use the pre-defined color classes with dark mode support
+      return `${baseClasses} ${option.color} ${option.textColor} ${option.darkColor} ${option.darkTextColor} border-transparent`;
+    } else {
+      // For non-selected options, use standard classes
+      return `${baseClasses} bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 dark:border-gray-600`;
+    }
+  };
+
+  // Function to get dot classes
+  const getDotClasses = (option: PriorityOption, isSelected: boolean) => {
+    if (isSelected) {
+      switch (option.value) {
+        case 4: return "w-2 h-2 rounded-full bg-red-500 dark:bg-red-400"; // Urgent
+        case 3: return "w-2 h-2 rounded-full bg-orange-500 dark:bg-orange-400"; // High
+        case 2: return "w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400"; // Medium
+        case 1: return "w-2 h-2 rounded-full bg-blue-500 dark:bg-blue-400"; // Low
+        default: return "w-2 h-2 rounded-full bg-gray-500 dark:bg-gray-400"; // None
+      }
+    }
+    return "w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500"; // Unselected
+  };
 
   return (
     <TaskFormField
-      id="priority-group"
+      id="priority"
       label="Priority"
-      icon={priorityIcon}
+      icon={<ArrowsPointingOutIcon className="h-3.5 w-3.5" />}
+      error={error}
     >
       <div 
         role="radiogroup" 
-        aria-labelledby="priority-group-label"
-        className="flex flex-wrap gap-2"
+        aria-labelledby="priority-label"
+        className="flex flex-wrap gap-1"
       >
         {priorityOptions.map((option: PriorityOption) => (
           <button
             key={option.value}
             type="button"
-            onClick={() => onPriorityChange(option.value)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all duration-200 ${
-              selectedPriority === option.value
-                ? `${option.color
-                    .replace("bg-", "bg-")
-                    .replace("-100", "-900/30")} 
-                  ${option.textColor.replace("text-", "text-")} 
-                  border-${option.color.split("-")[1]}-600`
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600"
-            }`}
-            aria-label={`Set priority to ${option.label}`}
+            onClick={() => {
+              onChange(option.value);
+              if (onBlur) onBlur();
+            }}
+            className={getButtonClasses(option, value === option.value)}
+            aria-checked={value === option.value}
             role="radio"
-            aria-checked={selectedPriority === option.value}
           >
+            <span className={getDotClasses(option, value === option.value)}></span>
             {option.label}
           </button>
         ))}
       </div>
     </TaskFormField>
   );
-} 
+}

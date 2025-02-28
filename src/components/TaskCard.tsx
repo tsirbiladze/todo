@@ -15,7 +15,7 @@ import {
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { formatDistanceToNow } from "date-fns";
 import { Check, Trash, Edit, Calendar, Clock } from "lucide-react";
-import { getPriorityColorClass, priorityToLabel, emotionToEmoji } from "@/lib/type-conversions";
+import { getPriorityColorClass, priorityToLabel, emotionToEmoji, getEmotionColorClass } from "@/lib/type-conversions";
 import { useConfirmationDialog } from '@/providers/ConfirmationProvider';
 import { formatDate, DATE_FORMATS } from "@/lib/date-utils";
 
@@ -166,8 +166,12 @@ export function TaskCard({ task, onComplete, onUpdate, onDelete, onEdit }: TaskC
             )}
 
             {task.emotion && (
-              <span className="text-xl" title={task.emotion} aria-label={`Feeling: ${task.emotion}`}>
-                {emotionToEmoji(task.emotion)}
+              <span 
+                className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 ${getEmotionColorClass(task.emotion)}`}
+                aria-label={`Feeling: ${task.emotion}`}
+              >
+                <span className="text-sm">{emotionToEmoji(task.emotion)}</span>
+                <span>{task.emotion.charAt(0) + task.emotion.slice(1).toLowerCase()}</span>
               </span>
             )}
           </div>

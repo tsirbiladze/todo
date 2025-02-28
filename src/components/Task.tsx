@@ -7,11 +7,14 @@ import {
   FlagIcon,
   CalendarIcon,
   TrashIcon,
-  EllipsisVerticalIcon
+  EllipsisVerticalIcon,
+  PencilIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline';
+import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { Task as TaskType } from '@prisma/client';
 import { formatDistanceToNow } from "date-fns";
-import { getPriorityColorClass, priorityToLabel, emotionToEmoji } from "@/lib/type-conversions";
+import { getPriorityColorClass, priorityToLabel, emotionToEmoji, getEmotionColorClass } from "@/lib/type-conversions";
 import { useConfirmationDialog } from '@/providers/ConfirmationProvider';
 import { formatDate, DATE_FORMATS } from "@/lib/date-utils";
 
@@ -110,8 +113,12 @@ export function Task({ task, onComplete, onUpdate, onDelete }: TaskProps) {
               </span>
             )}
             {task.emotion && (
-              <span className="text-xl" title={task.emotion}>
-                {emotionToEmoji(task.emotion)}
+              <span 
+                className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${getEmotionColorClass(task.emotion)}`}
+                title={task.emotion}
+              >
+                <span className="text-sm">{emotionToEmoji(task.emotion)}</span>
+                <span>{task.emotion.charAt(0) + task.emotion.slice(1).toLowerCase()}</span>
               </span>
             )}
           </div>

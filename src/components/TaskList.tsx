@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, Fragment } from 'react';
 import { TaskCard } from './TaskCard';
 import { useStore } from '@/lib/store';
 import { Task as TaskType } from '@prisma/client';
@@ -11,6 +11,11 @@ import {
   HeartIcon,
   ExclamationTriangleIcon,
   ArrowPathIcon,
+  CheckCircleIcon,
+  AdjustmentsHorizontalIcon,
+  XMarkIcon,
+  ArrowTopRightOnSquareIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { TaskCalendarView } from './TaskCalendarView';
 import { EditTaskForm } from './EditTaskForm';
@@ -23,6 +28,9 @@ import { MoodSuggestions } from './MoodSuggestions';
 import { formatDate, DATE_FORMATS } from "@/lib/date-utils";
 import { AiTaskAssistant } from './task-components/AiTaskAssistant';
 import { toast } from 'react-hot-toast';
+import { Dialog, Transition } from '@headlessui/react';
+import { Spinner } from './ui/Spinner';
+import { useDebouncedCallback } from 'use-debounce';
 
 type ViewMode = 'list' | 'board' | 'calendar';
 type SortOption = 'dueDate' | 'priority' | 'created' | 'category';
@@ -395,7 +403,7 @@ export function TaskList() {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  className="w-full border rounded-lg px-3 py-2 border-gray-300 dark:border-gray-700 focus:ring-blue-500 focus:border-blue-500 text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800"
+                  className="form-select w-full"
                 >
                   <option value="created">Created Date</option>
                   <option value="dueDate">Due Date</option>
@@ -408,7 +416,7 @@ export function TaskList() {
                 <select
                   value={groupBy}
                   onChange={(e) => setGroupBy(e.target.value as GroupOption)}
-                  className="w-full border rounded-lg px-3 py-2 border-gray-300 dark:border-gray-700 focus:ring-blue-500 focus:border-blue-500 text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-800"
+                  className="form-select w-full"
                 >
                   <option value="none">No Grouping</option>
                   <option value="category">Category</option>
@@ -421,32 +429,54 @@ export function TaskList() {
         )}
 
         {/* Render the EditTaskForm when isEditTaskOpen is true */}
-        {isEditTaskOpen && taskToEdit && (
-          <div 
-            className="fixed inset-0 backdrop-blur-sm flex items-center justify-center p-4 z-[10000]"
-            onClick={() => {
+        <Transition show={isEditTaskOpen} as={Fragment}>
+          <Dialog 
+            as="div" 
+            className="relative z-[10000]" 
+            onClose={() => {
               setIsEditTaskOpen(false);
               setTaskToEdit(null);
             }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-task-dialog"
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
           >
-            <div 
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md"
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0"
+              enterTo="opacity-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
             >
-              <EditTaskForm
-                task={taskToEdit}
-                onClose={() => {
-                  setIsEditTaskOpen(false);
-                  setTaskToEdit(null);
-                }}
-              />
+              <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
+            </Transition.Child>
+
+            <div className="fixed inset-0 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4 text-center">
+                <Transition.Child
+                  as={Fragment}
+                  enter="ease-out duration-300"
+                  enterFrom="opacity-0 scale-95"
+                  enterTo="opacity-100 scale-100"
+                  leave="ease-in duration-200"
+                  leaveFrom="opacity-100 scale-100"
+                  leaveTo="opacity-0 scale-95"
+                >
+                  <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 dark:border dark:border-gray-700 p-6 text-left align-middle shadow-xl transition-all">
+                    {taskToEdit && (
+                      <EditTaskForm
+                        task={taskToEdit}
+                        onClose={() => {
+                          setIsEditTaskOpen(false);
+                          setTaskToEdit(null);
+                        }}
+                      />
+                    )}
+                  </Dialog.Panel>
+                </Transition.Child>
+              </div>
             </div>
-          </div>
-        )}
+          </Dialog>
+        </Transition>
 
         {/* Error State */}
         {isError && (

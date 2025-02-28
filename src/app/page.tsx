@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { TaskList } from "@/components/TaskList";
 import { AddTaskForm } from "@/components/AddTaskForm";
 import { useStore } from "@/lib/store";
@@ -8,8 +8,11 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import { ArrowPathIcon } from "@heroicons/react/24/solid";
 import { LoadingIndicator } from "@/components/ui/LoadingIndicator";
 import { EmptyState } from "@/components/EmptyState";
+import { Transition, Dialog } from "@headlessui/react";
+import { useTranslation } from "@/lib/i18n";
 
 export default function Home() {
+  const { t } = useTranslation();
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const setTasks = useStore((state) => state.setTasks);
   const tasks = useStore((state) => state.tasks);
@@ -95,7 +98,7 @@ export default function Home() {
       {/* Initial Loading State */}
       {isLoading && (
         <div className="flex flex-col items-center justify-center h-60 mt-8">
-          <LoadingIndicator size="lg" variant="dots" text="Loading your tasks..." />
+          <LoadingIndicator size="lg" variant="dots" text={t('common.loading')} />
         </div>
       )}
 
@@ -136,7 +139,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto px-4 pt-4">
             <div className="flex justify-between items-center mb-4">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {focusMode ? "Focus Mode" : "Tasks"}
+                {focusMode ? t('focus.title') : t('task.filter.all')}
               </h1>
               <div className="flex space-x-2">
                 <button
@@ -148,7 +151,7 @@ export default function Home() {
                       : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
                   }`}
                 >
-                  {focusMode ? "Exit Focus" : "Focus Mode"}
+                  {focusMode ? t('focus.end') : t('focus.title')}
                 </button>
                 <button
                   type="button"
@@ -156,7 +159,7 @@ export default function Home() {
                   className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-700 dark:hover:bg-indigo-600"
                 >
                   <PlusIcon className="h-4 w-4 mr-1.5" />
-                  New Task
+                  {t('task.createTask')}
                 </button>
               </div>
             </div>
@@ -173,14 +176,53 @@ export default function Home() {
             <TaskList />
           )}
 
-          {isAddTaskOpen && (
-            <AddTaskForm
+          {/* Use Transition and Dialog components for smooth animation */}
+          <Transition appear show={isAddTaskOpen} as={Fragment}>
+            <Dialog 
+              as="div" 
+              className="relative z-50" 
               onClose={() => {
                 setIsAddTaskOpen(false);
                 document.body.classList.remove("modal-open");
               }}
-            />
-          )}
+              initialFocus={undefined}
+            >
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0"
+                enterTo="opacity-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100"
+                leaveTo="opacity-0"
+              >
+                <div className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm" />
+              </Transition.Child>
+
+              <div className="fixed inset-0 overflow-y-auto">
+                <div className="flex min-h-full items-center justify-center p-4 text-center">
+                  <Transition.Child
+                    as={Fragment}
+                    enter="ease-out duration-300"
+                    enterFrom="opacity-0 scale-95"
+                    enterTo="opacity-100 scale-100"
+                    leave="ease-in duration-200"
+                    leaveFrom="opacity-100 scale-100"
+                    leaveTo="opacity-0 scale-95"
+                  >
+                    <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 dark:border dark:border-gray-700 p-6 text-left align-middle shadow-xl transition-all">
+                      <AddTaskForm
+                        onClose={() => {
+                          setIsAddTaskOpen(false);
+                          document.body.classList.remove("modal-open");
+                        }}
+                      />
+                    </Dialog.Panel>
+                  </Transition.Child>
+                </div>
+              </div>
+            </Dialog>
+          </Transition>
         </>
       )}
     </main>

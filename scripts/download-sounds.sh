@@ -1,73 +1,96 @@
 #!/bin/bash
-echo "YouTube Sound Downloader for Focus Mode"
+echo "!!! WARNING - DEVELOPMENT USE ONLY !!!"
+echo "This script is for development purposes only."
+echo "Do NOT distribute these audio files with any production app!"
+echo "For production, use scripts/fetch-real-sounds.js with proper licensing."
+echo ""
+echo "Focus Mode Sound Downloader"
 echo "======================================"
 
-echo "Downloading white-noise.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/white-noise.mp3" "https://www.youtube.com/watch?v=nMfPqeZjc2c"
-if [ $? -ne 0 ]; then
-  echo "Failed to download white-noise.mp3"
+# Determine script directory and project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+SOUNDS_DIR="$PROJECT_ROOT/public/sounds"
+
+# Create sounds directory if it doesn't exist
+mkdir -p "$SOUNDS_DIR"
+
+# Check if yt-dlp is installed
+if ! command -v yt-dlp &> /dev/null; then
+    echo "yt-dlp is not installed. Please install it first:"
+    echo "pip install yt-dlp"
+    exit 1
 fi
 
-echo "Downloading rain.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/rain.mp3" "https://www.youtube.com/watch?v=q76bMs-NwRk"
-if [ $? -ne 0 ]; then
-  echo "Failed to download rain.mp3"
-fi
+# Function to download sound with error handling
+download_sound() {
+    local name="$1"
+    local url="$2"
+    local output="$SOUNDS_DIR/$name"
+    
+    echo "Downloading $name..."
+    yt-dlp -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:10:00" -o "$output" "$url"
+    
+    if [ $? -ne 0 ]; then
+        echo "Failed to download $name"
+        return 1
+    fi
+    
+    # Check if file exists and has content
+    if [ ! -f "$output" ] || [ ! -s "$output" ]; then
+        echo "Download of $name failed or produced an empty file"
+        return 1
+    fi
+    
+    echo "Successfully downloaded $name"
+    return 0
+}
 
-echo "Downloading cafe.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/cafe.mp3" "https://www.youtube.com/watch?v=uiMXGIG_DQo"
-if [ $? -ne 0 ]; then
-  echo "Failed to download cafe.mp3"
-fi
+# Creative Commons sources - still use with caution
+SOUNDS=(
+    "white-noise.mp3|https://www.youtube.com/watch?v=aXNzUc2Ib0A"
+    "rain.mp3|https://www.youtube.com/watch?v=at7Wh_AJ5_A"
+    "cafe.mp3|https://www.youtube.com/watch?v=MMBh-JLGgIU"
+    "nature.mp3|https://www.youtube.com/watch?v=TYXQbLFYr2c"
+    "brown-noise.mp3|https://www.youtube.com/watch?v=RqzGzwTY-6w"
+)
 
-echo "Downloading nature.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/nature.mp3" "https://www.youtube.com/watch?v=eKFTSSKCzWA"
-if [ $? -ne 0 ]; then
-  echo "Failed to download nature.mp3"
-fi
+# Binaural beats - use with extreme caution, consider creating your own
+BRAINWAVES=(
+    "alpha-waves.mp3|https://www.youtube.com/watch?v=WPni755-Krg"
+    "beta-waves.mp3|https://www.youtube.com/watch?v=KjgYCUMnf1E"
+    "theta-waves.mp3|https://www.youtube.com/watch?v=dGcbEGksyqM"
+    "delta-waves.mp3|https://www.youtube.com/watch?v=xQ6xgDI7Whc"
+    "gamma-waves.mp3|https://www.youtube.com/watch?v=lmjy_NI8EQ0"
+)
 
-echo "Downloading brown-noise.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/brown-noise.mp3" "https://www.youtube.com/watch?v=0GDfOAuUvQ0"
-if [ $? -ne 0 ]; then
-  echo "Failed to download brown-noise.mp3"
-fi
+# Notification sound
+NOTIFICATIONS=(
+    "bell.mp3|https://www.youtube.com/watch?v=V3D1H3JKEew"
+)
 
-echo "Downloading alpha-waves.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/alpha-waves.mp3" "https://www.youtube.com/watch?v=GEgSBuYlSoA"
-if [ $? -ne 0 ]; then
-  echo "Failed to download alpha-waves.mp3"
-fi
+echo "Downloading ambient sounds..."
+for sound in "${SOUNDS[@]}"; do
+    IFS="|" read -r name url <<< "$sound"
+    download_sound "$name" "$url"
+done
 
-echo "Downloading beta-waves.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/beta-waves.mp3" "https://www.youtube.com/watch?v=YWIhyOWxKPw"
-if [ $? -ne 0 ]; then
-  echo "Failed to download beta-waves.mp3"
-fi
+echo "Downloading brainwave entrainment sounds..."
+for sound in "${BRAINWAVES[@]}"; do
+    IFS="|" read -r name url <<< "$sound"
+    download_sound "$name" "$url"
+done
 
-echo "Downloading theta-waves.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/theta-waves.mp3" "https://www.youtube.com/watch?v=KcU6w1Pr5gc"
-if [ $? -ne 0 ]; then
-  echo "Failed to download theta-waves.mp3"
-fi
-
-echo "Downloading delta-waves.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/delta-waves.mp3" "https://www.youtube.com/watch?v=njHvGxZgTPk"
-if [ $? -ne 0 ]; then
-  echo "Failed to download delta-waves.mp3"
-fi
-
-echo "Downloading gamma-waves.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/gamma-waves.mp3" "https://www.youtube.com/watch?v=vLEek3I3wac"
-if [ $? -ne 0 ]; then
-  echo "Failed to download gamma-waves.mp3"
-fi
-
-echo "Downloading bell.mp3..."
-youtube-dl -x --audio-format mp3 --audio-quality 128K --postprocessor-args "-ss 00:00:00 -to 00:30:00" -o "/home/remedios/Documents/Projects/todo/public/sounds/bell.mp3" "https://www.youtube.com/watch?v=keoC-poCEwA"
-if [ $? -ne 0 ]; then
-  echo "Failed to download bell.mp3"
-fi
+echo "Downloading notification sounds..."
+for sound in "${NOTIFICATIONS[@]}"; do
+    IFS="|" read -r name url <<< "$sound"
+    download_sound "$name" "$url"
+done
 
 echo ""
 echo "Download complete!"
-echo "Check the public/sounds directory for the downloaded files."
+echo "Check the $SOUNDS_DIR directory for the downloaded files."
+echo ""
+echo "IMPORTANT REMINDER: These files are for development purposes only."
+echo "For production, use free-to-use sounds from Freesound.org or similar sources with proper licensing."
+echo "Run scripts/fetch-real-sounds.js with your FreeSoundAPI key for production use."

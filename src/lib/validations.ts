@@ -9,8 +9,10 @@ interface ValidationErrors {
 interface ValidationFieldValues {
   title?: string;
   description?: string;
+  priority?: number;
   estimatedDuration?: number;
   dueDate?: string;
+  selectedCategories?: string[];
   [key: string]: any;
 }
 
@@ -19,49 +21,45 @@ interface ValidationFieldValues {
  * 
  * @param field The field name to validate
  * @param values The current form values
- * @param touched Map of which fields have been touched/edited
- * @param errors Current validation errors
- * @returns Whether the field is valid
+ * @returns The validation error message if any
  */
 export const validateTaskField = (
   field: string,
-  values: ValidationFieldValues,
-  touched: Record<string, boolean>,
-  errors: ValidationErrors
-): ValidationErrors => {
-  if (!touched[field]) {
-    return errors;
+  values: ValidationFieldValues
+): string => {
+  // Safety check for undefined values
+  if (!values) {
+    return "";
   }
-  
-  const newErrors = { ...errors };
 
   switch (field) {
     case "title":
       if (!values.title?.trim()) {
-        newErrors.title = "Title is required";
+        return "Title is required";
       } else if (values.title.length > 255) {
-        newErrors.title = "Title is too long (max 255 characters)";
-      } else {
-        delete newErrors.title;
+        return "Title is too long (max 255 characters)";
       }
       break;
       
     case "description":
       if (values.description && values.description.length > 1000) {
-        newErrors.description = "Description is too long (max 1000 characters)";
-      } else {
-        delete newErrors.description;
+        return "Description is too long (max 1000 characters)";
+      }
+      break;
+      
+    case "priority":
+      // Validate priority is defined and within valid range
+      if (values.priority === undefined || values.priority < 0 || values.priority > 4) {
+        return "Please select a valid priority level";
       }
       break;
       
     case "estimatedDuration":
       if (values.estimatedDuration !== undefined) {
         if (values.estimatedDuration < 0) {
-          newErrors.estimatedDuration = "Duration cannot be negative";
+          return "Duration cannot be negative";
         } else if (values.estimatedDuration > 1440) {
-          newErrors.estimatedDuration = "Duration cannot exceed 24 hours (1440 minutes)";
-        } else {
-          delete newErrors.estimatedDuration;
+          return "Duration cannot exceed 24 hours (1440 minutes)";
         }
       }
       break;
@@ -73,12 +71,14 @@ export const validateTaskField = (
         
         // For datetime-local inputs, we need to check the actual time as well
         if (dueDateTime < now) {
-          newErrors.dueDate = "Due date and time cannot be in the past";
-        } else {
-          delete newErrors.dueDate;
+          return "Due date and time cannot be in the past";
         }
-      } else {
-        delete newErrors.dueDate;
+      }
+      break;
+      
+    case "categories":
+      if (values.selectedCategories && values.selectedCategories.length > 5) {
+        return "You can select up to 5 categories";
       }
       break;
       
@@ -86,36 +86,30 @@ export const validateTaskField = (
       break;
   }
 
-  return newErrors;
+  return ""; // No error
 };
 
 /**
  * Validates all fields in a task form
  * 
  * @param values The current form values
- * @param errors Current validation errors
- * @returns Whether the form is valid and updated errors
+ * @returns Validation errors object
  */
 export const validateTaskForm = (
-  values: ValidationFieldValues,
-  errors: ValidationErrors = {}
-): { isValid: boolean; errors: ValidationErrors } => {
-  const allTouched = {
-    title: true,
-    description: true,
-    estimatedDuration: true,
-    dueDate: true,
-  };
+  values: ValidationFieldValues
+): ValidationErrors => {
+  let errors: ValidationErrors = {};
   
-  let newErrors = { ...errors };
+  // Fields to validate
+  const fields = ["title", "description", "priority", "estimatedDuration", "dueDate", "categories"];
   
   // Validate each field
-  Object.keys(allTouched).forEach(field => {
-    newErrors = validateTaskField(field, values, allTouched, newErrors);
+  fields.forEach(field => {
+    const error = validateTaskField(field, values);
+    if (error) {
+      errors[field] = error;
+    }
   });
   
-  return {
-    isValid: Object.keys(newErrors).length === 0,
-    errors: newErrors
-  };
+  return errors;
 }; 

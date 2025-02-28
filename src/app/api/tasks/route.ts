@@ -6,42 +6,60 @@ import { authOptions } from '@/lib/auth';
 import { Priority, Emotion } from "@prisma/client";
 import { recordTaskChange } from '@/lib/task-history';
 import { logger } from '@/lib/logger';
-
-// Helper to get authenticated user ID with type safety
-async function getAuthenticatedUserId(): Promise<string | null> {
-  try {
-    const session = await getServerSession(authOptions);
-    return session?.user?.id || null;
-  } catch (error) {
-    logger.error('Error getting user session:', {
-      component: 'api/tasks',
-      data: error
-    });
-    return null;
-  }
-}
-
-// Generic error response builder
-function errorResponse(message: string, statusCode: number = 400) {
-  return NextResponse.json(
-    { error: message },
-    { status: statusCode }
-  );
-}
+import {
+  errorResponse,
+  getAuthenticatedUserId,
+  handleCommonErrors,
+  HttpStatus,
+  successResponse,
+  unauthorizedResponse,
+} from '@/lib/server/api-helpers';
+import { processRelation, validateRelationIds } from '@/lib/server/relation-helpers';
 
 // GET /api/tasks - Get all tasks for authenticated user
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     // Get the authenticated user ID
     const userId = await getAuthenticatedUserId();
     
     if (!userId) {
-      return errorResponse('Unauthorized', 401);
+      return unauthorizedResponse();
+    }
+    
+    // Get query parameters for filtering
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get('status');
+    const categoryId = searchParams.get('categoryId');
+    const priority = searchParams.get('priority');
+    const searchTerm = searchParams.get('search');
+    
+    // Build the where clause based on filters
+    const where: any = { userId };
+    
+    if (status) {
+      where.status = status;
+    }
+    
+    if (categoryId) {
+      where.categories = {
+        some: { id: categoryId }
+      };
+    }
+    
+    if (priority) {
+      where.priority = priority;
+    }
+    
+    if (searchTerm) {
+      where.OR = [
+        { title: { contains: searchTerm, mode: 'insensitive' } },
+        { description: { contains: searchTerm, mode: 'insensitive' } }
+      ];
     }
     
     // Get tasks for the authenticated user only
     const tasks = await prisma.task.findMany({
-      where: { userId },
+      where,
       include: {
         categories: true,
         subtasks: {
@@ -53,24 +71,20 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
     
-    return NextResponse.json({ tasks });
+    return successResponse({ tasks });
   } catch (error) {
-    logger.error('Error fetching tasks:', {
-      component: 'api/tasks',
-      data: error
-    });
-    return errorResponse('Failed to fetch tasks', 500);
+    return handleCommonErrors(error, 'api/tasks/GET');
   }
 }
 
 // POST /api/tasks - Create a new task with validation
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     // Get the authenticated user ID
     const userId = await getAuthenticatedUserId();
     
     if (!userId) {
-      return errorResponse('Unauthorized', 401);
+      return unauthorizedResponse();
     }
     
     const body = await req.json();
@@ -79,41 +93,33 @@ export async function POST(req: NextRequest) {
     const validation = await validateData(taskSchema, body);
     
     if (!validation.success) {
-      return errorResponse(`Validation error: ${validation.error}`, 400);
+      return errorResponse(`Validation error: ${validation.error}`, HttpStatus.BAD_REQUEST);
     }
     
-    // Extract categoryIds - support both 'categoryIds' and 'categories' fields
-    let categoryIds = validation.data.categoryIds;
+    // Extract and validate category IDs using the helper
+    const categoryValidation = validateRelationIds(
+      body,
+      'categoryIds',
+      'categories'
+    );
     
-    // If categoryIds isn't present but there's a categories field, use that instead
-    if (!categoryIds && body.categories) {
-      // Check if it's an array of strings (IDs) or an array of objects with IDs
-      if (Array.isArray(body.categories)) {
-        if (body.categories.length > 0) {
-          // If it's an array of objects with an id property, extract just the IDs
-          if (typeof body.categories[0] === 'object' && body.categories[0].id) {
-            categoryIds = body.categories.map((cat: any) => cat.id);
-          } 
-          // If it's already an array of strings, use directly
-          else if (typeof body.categories[0] === 'string') {
-            categoryIds = body.categories;
-          }
-        } else {
-          // Empty array
-          categoryIds = [];
-        }
-      }
+    // If validation failed, return an error
+    if (!categoryValidation.success) {
+      return errorResponse(`Category validation error: ${categoryValidation.error}`, HttpStatus.BAD_REQUEST);
     }
     
-    // Remove both from taskData to avoid any confusions
+    // Extract validated data and remove categoryIds and categories
     const { categoryIds: _, categories: __, ...taskData } = validation.data;
+    
+    // Get category IDs from validation result
+    const categoryIds = categoryValidation.data || [];
     
     // Create the task
     const task = await prisma.task.create({
       data: {
         ...taskData,
         userId, // Always set from the authenticated user
-        categories: categoryIds && categoryIds.length > 0 ? {
+        categories: categoryIds.length > 0 ? {
           connect: categoryIds.map(id => ({ id })),
         } : undefined,
       },
@@ -136,140 +142,25 @@ export async function POST(req: NextRequest) {
       }
     );
     
-    return NextResponse.json({ task }, { status: 201 });
+    return successResponse({ task }, HttpStatus.CREATED);
   } catch (error) {
-    logger.error('Error creating task:', {
-      component: 'api/tasks',
-      data: error
-    });
-    return errorResponse('Failed to create task', 500);
+    return handleCommonErrors(error, 'api/tasks/POST');
   }
 }
 
-export async function PUT(request: Request) {
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
   try {
-    const session = await getServerSession(authOptions);
+    const userId = await getAuthenticatedUserId();
 
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const data = await request.json();
-    const { id, categories, ...taskData } = data;
-
-    // Get the user ID and verify task ownership
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Check if the task belongs to the user
-    const existingTask = await prisma.task.findUnique({
-      where: { id },
-      select: { userId: true },
-    });
-
-    if (!existingTask) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    if (existingTask.userId !== user.id) {
-      return NextResponse.json(
-        { error: "Unauthorized to modify this task" },
-        { status: 403 }
-      );
-    }
-
-    // Validate priority if present
-    if (
-      taskData.priority &&
-      !Object.values(Priority).includes(taskData.priority)
-    ) {
-      return NextResponse.json(
-        { error: "Invalid priority value" },
-        { status: 400 }
-      );
-    }
-
-    // Validate emotion if present
-    if (
-      taskData.emotion &&
-      !Object.values(Emotion).includes(taskData.emotion)
-    ) {
-      return NextResponse.json(
-        { error: "Invalid emotion value" },
-        { status: 400 }
-      );
-    }
-
-    const task = await prisma.task.update({
-      where: { id },
-      data: {
-        ...taskData,
-        categories: categories
-          ? {
-              set: categories.map((cat: { id: string }) => ({ id: cat.id })),
-            }
-          : undefined,
-      },
-      include: {
-        categories: true,
-        goal: true,
-      },
-    });
-
-    // Record the update in task history
-    await recordTaskChange(
-      id,
-      user.id,
-      'UPDATED',
-      taskData,
-      { id, ...existingTask }
-    );
-
-    return NextResponse.json({ task });
-  } catch (error) {
-    logger.error("Error updating task:", {
-      component: 'api/tasks',
-      data: error
-    });
-    return NextResponse.json(
-      { error: "Failed to update task" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!userId) {
+      return unauthorizedResponse();
     }
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json(
-        { error: "Task ID is required" },
-        { status: 400 }
-      );
-    }
-
-    // Get the user ID and verify task ownership
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return errorResponse("Task ID is required", HttpStatus.BAD_REQUEST);
     }
 
     // Check if the task belongs to the user
@@ -279,14 +170,11 @@ export async function DELETE(request: Request) {
     });
 
     if (!existingTask) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      return errorResponse("Task not found", HttpStatus.NOT_FOUND);
     }
 
-    if (existingTask.userId !== user.id) {
-      return NextResponse.json(
-        { error: "Unauthorized to delete this task" },
-        { status: 403 }
-      );
+    if (existingTask.userId !== userId) {
+      return errorResponse("You are not authorized to delete this task", HttpStatus.FORBIDDEN);
     }
 
     await prisma.task.delete({
@@ -296,7 +184,7 @@ export async function DELETE(request: Request) {
     // Record the deletion in task history
     await recordTaskChange(
       id,
-      user.id,
+      userId,
       'DELETED',
       {
         deletedAt: new Date().toISOString(),
@@ -307,15 +195,8 @@ export async function DELETE(request: Request) {
       }
     );
 
-    return NextResponse.json({ success: true });
+    return successResponse({ success: true, message: 'Task deleted successfully' });
   } catch (error) {
-    logger.error("Error deleting task:", {
-      component: 'api/tasks',
-      data: error
-    });
-    return NextResponse.json(
-      { error: "Failed to delete task" },
-      { status: 500 }
-    );
+    return handleCommonErrors(error, 'api/tasks/DELETE');
   }
 }

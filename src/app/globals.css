@@ -5,61 +5,183 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --input-bg: #ffffff;
+  --input-border: #e5e7eb;
+  --input-text: #171717;
+  --input-placeholder: #9ca3af;
+  --modal-bg: #ffffff;
+  --modal-border: transparent;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #ebe9ff;
+  --primary-dark: #6366f1;
+  --focus-ring: 0 0 0 2px rgba(99, 102, 241, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #111827;
+    --foreground: #f9fafb;
+    --input-bg: #1f2937;
+    --input-border: #374151;
+    --input-text: #f3f4f6;
+    --input-placeholder: #6b7280;
+    --modal-bg: #1f2937;
+    --modal-border: #374151;
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --primary-light: #312e81;
+    --primary-dark: #818cf8;
+    --focus-ring: 0 0 0 2px rgba(99, 102, 241, 0.5);
   }
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 body.modal-open {
   overflow: hidden;
 }
 
-/* Date and time input styling for dark mode */
-input[type="date"],
-input[type="datetime-local"] {
-  color-scheme: light dark;
-}
+@layer base {
+  input, 
+  textarea, 
+  select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--input-text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    @apply transition-colors duration-150;
+  }
 
-/* In dark mode, ensure calendar popup has dark colors */
-@media (prefers-color-scheme: dark) {
+  input:focus, 
+  textarea:focus, 
+  select:focus {
+    box-shadow: var(--focus-ring);
+    outline: none;
+    @apply ring-2 ring-indigo-600 dark:ring-indigo-500 border-transparent;
+  }
+
+  input::placeholder, 
+  textarea::placeholder {
+    color: var(--input-placeholder);
+  }
+
+  button {
+    @apply transition-all duration-200;
+  }
+
+  /* Date and time input styling for dark mode */
   input[type="date"],
   input[type="datetime-local"] {
+    color-scheme: light dark;
+  }
+
+  /* In dark mode, ensure calendar popup has dark colors */
+  @media (prefers-color-scheme: dark) {
+    input[type="date"],
+    input[type="datetime-local"] {
+      color-scheme: dark;
+    }
+  }
+
+  /* Support for class-based dark mode */
+  .dark input[type="date"],
+  .dark input[type="datetime-local"] {
     color-scheme: dark;
   }
 }
 
-/* Support for class-based dark mode */
-.dark input[type="date"],
-.dark input[type="datetime-local"] {
-  color-scheme: dark;
+@layer components {
+  /* Modal styling */
+  .modal-content {
+    background-color: var(--modal-bg);
+    border-color: var(--modal-border);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    @apply rounded-2xl;
+  }
+
+  /* Custom CSS classes */
+  .btn {
+    @apply font-medium rounded-lg transition-all duration-200 inline-flex items-center justify-center;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 
+         dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .btn-md {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .btn-lg {
+    @apply px-5 py-2.5 text-base;
+  }
+
+  /* Form field styling */
+  .form-input {
+    @apply block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 dark:text-gray-100 
+          bg-white dark:bg-gray-800 shadow-sm ring-1 ring-inset ring-gray-300 
+          dark:ring-gray-600 placeholder:text-gray-400 dark:placeholder:text-gray-500
+          focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-indigo-500
+          sm:text-sm sm:leading-6;
+  }
 }
 
-/* Loading animation keyframes */
-@keyframes progress {
-  0% {
-    width: 0%;
-    margin-left: 0%;
+@layer utilities {
+  /* Focus styles */
+  *:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
-  50% {
-    width: 30%;
-    margin-left: 70%;
-  }
-  100% {
-    width: 0%;
-    margin-left: 100%;
-  }
-}
 
-.animate-progress {
-  animation: progress 1.5s ease-in-out infinite;
+  .dark *:focus-visible {
+    box-shadow: var(--focus-ring);
+  }
+
+  /* Loading animation keyframes */
+  @keyframes progress {
+    0% {
+      width: 0%;
+      margin-left: 0%;
+    }
+    50% {
+      width: 30%;
+      margin-left: 70%;
+    }
+    100% {
+      width: 0%;
+      margin-left: 100%;
+    }
+  }
+
+  .animate-progress {
+    animation: progress 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+    20%, 40%, 60%, 80% { transform: translateX(2px); }
+  }
+
+  .animate-shake {
+    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+  }
 }

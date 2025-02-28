@@ -11,7 +11,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const SOUNDS_DIR = path.join(__dirname, '../public/sounds');
+// Determine script directory and project root for reliable path resolution
+const SCRIPT_DIR = path.dirname(require.resolve(__filename));
+const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
+const SOUNDS_DIR = path.join(PROJECT_ROOT, 'public/sounds');
+
+console.log('\x1b[36m=== Focus Mode Sample Sound Creator ===\x1b[0m');
+console.log(`Project root: ${PROJECT_ROOT}`);
+console.log(`Sounds directory: ${SOUNDS_DIR}`);
 
 // List of ambient sound files to create
 const AMBIENT_SOUNDS = [
@@ -33,7 +40,8 @@ const BRAINWAVE_SOUNDS = [
 
 // Other utility sounds
 const OTHER_SOUNDS = [
-  { name: 'bell.mp3', description: 'Bell sound for timer completion' }
+  { name: 'bell.mp3', description: 'Bell sound for timer completion' },
+  { name: 'notification.mp3', description: 'Notification sound' }
 ];
 
 // All files to create
@@ -49,7 +57,12 @@ const EMPTY_MP3 = Buffer.from([
 // Ensure the sounds directory exists
 if (!fs.existsSync(SOUNDS_DIR)) {
   console.log(`Creating directory: ${SOUNDS_DIR}`);
-  fs.mkdirSync(SOUNDS_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(SOUNDS_DIR, { recursive: true });
+  } catch (error) {
+    console.error(`\x1b[31mFailed to create sounds directory: ${error.message}\x1b[0m`);
+    process.exit(1);
+  }
 }
 
 // Create README.txt file
@@ -75,6 +88,7 @@ This directory contains audio files used in the Focus Mode feature.
 
 ### Other
 - bell.mp3 - Bell sound for timer completion
+- notification.mp3 - Notification sound
 
 ## Recommended Specifications
 - Format: MP3
@@ -105,31 +119,53 @@ For commercial applications, verify that the audio files are licensed appropriat
 `;
 
 // Create the README file
-fs.writeFileSync(path.join(SOUNDS_DIR, 'README.txt'), readmeContent);
-console.log('Created README.txt with instructions');
+try {
+  fs.writeFileSync(path.join(SOUNDS_DIR, 'README.txt'), readmeContent);
+  console.log('\x1b[32mCreated README.txt with instructions\x1b[0m');
+} catch (error) {
+  console.error(`\x1b[31mFailed to create README.txt: ${error.message}\x1b[0m`);
+}
 
 // Create each audio file
-console.log('Creating placeholder audio files:');
+console.log('\n\x1b[36mCreating placeholder audio files:\x1b[0m');
+
+let createdCount = 0;
+let existingCount = 0;
+let errorCount = 0;
 
 ALL_FILES.forEach(file => {
   const filePath = path.join(SOUNDS_DIR, file.name);
   
   // Check if file already exists
   if (fs.existsSync(filePath)) {
-    console.log(`- ${file.name} (already exists)`);
+    console.log(`- ${file.name} \x1b[33m(already exists)\x1b[0m`);
+    existingCount++;
   } else {
     try {
       // Write the empty MP3 data
       fs.writeFileSync(filePath, EMPTY_MP3);
-      console.log(`- ${file.name} (created placeholder)`);
+      console.log(`- ${file.name} \x1b[32m(created placeholder)\x1b[0m`);
+      createdCount++;
     } catch (err) {
-      console.error(`- ERROR: Failed to create ${file.name}: ${err.message}`);
+      console.error(`- ${file.name} \x1b[31m(ERROR: ${err.message})\x1b[0m`);
+      errorCount++;
     }
   }
 });
 
-console.log('\nCreation complete!');
+console.log('\n\x1b[36m=== SUMMARY ===\x1b[0m');
+console.log(`Created: ${createdCount}`);
+console.log(`Already existed: ${existingCount}`);
+console.log(`Errors: ${errorCount}`);
+
+console.log('\n\x1b[32mCreation complete!\x1b[0m');
 console.log(`Placeholder audio files have been created in: ${SOUNDS_DIR}`);
-console.log('\nIMPORTANT: These are empty placeholder files and may not work in all browsers.');
+console.log('\n\x1b[33mIMPORTANT: These are empty placeholder files and may not work in all browsers.\x1b[0m');
 console.log('For proper usage, please replace them with actual audio content.');
-console.log('See README.txt for more information on required audio files.'); 
+console.log('See README.txt for more information on required audio files.');
+
+console.log('\n\x1b[36mNext steps:\x1b[0m');
+console.log('1. Run the download-sounds.sh script to download real sounds:');
+console.log('   bash scripts/download-sounds.sh');
+console.log('2. Or run the fetch-real-sounds.js script with your FreeSoundAPI key:');
+console.log('   node scripts/fetch-real-sounds.js YOUR_API_KEY'); 

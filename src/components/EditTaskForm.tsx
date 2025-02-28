@@ -1,11 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { Task } from "@prisma/client";
 import {
-  ClockIcon,
-  XMarkIcon,
-  ExclamationCircleIcon,
   PencilIcon,
+  ExclamationCircleIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
 import { format } from "date-fns";
@@ -20,6 +18,7 @@ import { TaskFormField } from "./form-components/TaskFormField";
 import { PrioritySelector } from "./form-components/PrioritySelector";
 import { EmotionSelector } from "./form-components/EmotionSelector";
 import { CategorySelector } from "./form-components/CategorySelector";
+import { DurationSelector } from "./form-components/DurationSelector";
 import { formatDateForInput } from "@/lib/date-utils";
 import { AIEnhancedInput } from './ui/AIEnhancedInput';
 
@@ -57,65 +56,40 @@ export function EditTaskForm({ task, onClose }: EditTaskFormProps) {
   const categories = useStore((state) => state.categories);
   const updateTask = useStore((state) => state.updateTask);
 
-  // Memoize icons to prevent recreation on each render
-  const pencilIcon = useMemo(() => (
-    <PencilIcon className="h-3.5 w-3.5 text-gray-400 mr-1.5" aria-hidden="true" />
-  ), []);
-  
-  const clockIcon = useMemo(() => (
-    <ClockIcon className="h-3.5 w-3.5 text-gray-400 mr-1.5" aria-hidden="true" />
-  ), []);
-
   // Handle field blur for validation
   const handleBlur = (field: string) => {
     setTouched({ ...touched, [field]: true });
     
-    // Use shared validation
-    const fieldValues = {
-      title,
-      description,
-      estimatedDuration,
-      dueDate
-    };
+    const error = validateTaskField(field, { 
+      title, description, priority, dueDate, selectedCategories, estimatedDuration
+    });
     
-    const newErrors = validateTaskField(field, fieldValues, touched, validationErrors);
-    setValidationErrors(newErrors);
+    setValidationErrors(prev => ({ ...prev, [field]: error }));
   };
 
   // Validate all fields
   const validateForm = () => {
-    const fieldValues = {
-      title,
-      description,
-      estimatedDuration,
-      dueDate
-    };
+    const errors = validateTaskForm({
+      title, description, priority, dueDate, selectedCategories, estimatedDuration
+    });
     
-    const { isValid, errors } = validateTaskForm(fieldValues);
     setValidationErrors(errors);
     setTouched({
       title: true,
       description: true,
-      estimatedDuration: true,
+      priority: true,
       dueDate: true,
+      categories: true,
+      estimatedDuration: true,
     });
     
-    return isValid;
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!validateForm()) {
-      // Scroll to the first error element
-      const firstErrorField = Object.keys(validationErrors)[0];
-      if (firstErrorField) {
-        const errorElement = document.getElementById(firstErrorField);
-        if (errorElement) {
-          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          errorElement.focus();
-        }
-      }
       return;
     }
 
@@ -187,279 +161,183 @@ export function EditTaskForm({ task, onClose }: EditTaskFormProps) {
           ? error.message
           : "Failed to update task. Please try again."
       );
-      
-      // Scroll error message into view
-      const errorElement = document.getElementById("edit-form-error-message");
-      if (errorElement) {
-        errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <>
-      <div className="z-[10001] flex flex-col bg-gray-900 rounded-lg shadow-xl overflow-hidden border border-gray-700/70 relative max-w-md w-full">
-        {/* Header */}
-        <div className="flex items-center justify-between p-3 border-b border-gray-700/70 bg-gray-800 sticky top-0 z-20">
-          <h2 className="text-base font-medium text-gray-100" id="edit-task-dialog-title">Edit Task</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1 text-gray-400 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200"
-            aria-label="Close edit form"
-          >
-            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form
-          id="edit-task-form"
-          onSubmit={handleSubmit}
-          className="p-3 space-y-3 overflow-y-auto scrollbar-thin"
-          aria-labelledby="edit-task-dialog-title"
-          noValidate
-          style={{ maxHeight: 'calc(80vh - 120px)' }} // Subtract header and footer heights
+    <form onSubmit={handleSubmit} className="space-y-2 overflow-hidden">
+      <div className="flex justify-between items-center mb-2 border-b border-gray-200 dark:border-gray-700 pb-2">
+        <h2 className="text-base font-medium text-gray-900 dark:text-white flex items-center gap-1.5">
+          <span className="h-4 w-4 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center">
+            <PencilIcon className="h-2.5 w-2.5 text-indigo-600 dark:text-indigo-400" />
+          </span>
+          Edit Task
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+          aria-label="Close"
         >
-          {/* Title */}
-          <TaskFormField 
-            id="title"
-            label="Title"
-            icon={pencilIcon}
-            touched={touched.title}
-            error={validationErrors.title}
-            rightElement={
-              <button
-                type="button"
-                onClick={() => setUseAI(!useAI)}
-                className={`p-1 rounded-md text-xs flex items-center gap-1 ${
-                  useAI 
-                    ? 'text-teal-400 bg-teal-900/20' 
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-                title={useAI ? "Disable Gemini assistance" : "Enable Gemini assistance"}
-              >
-                <SparklesIcon className="h-3 w-3" />
-                <span>{useAI ? 'Gemini On' : 'Gemini Off'}</span>
-              </button>
-            }
-          >
-            {useAI ? (
-              <AIEnhancedInput
-                id="title"
-                value={title}
-                onChange={setTitle}
-                onBlur={() => handleBlur("title")}
-                placeholder="Task title"
-                fieldType="title"
-                touched={touched.title}
-                error={validationErrors.title}
-              />
-            ) : (
-              <input
-                id="title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => handleBlur("title")}
-                className={`block w-full border ${
-                  touched.title && validationErrors.title
-                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-600 focus:border-primary-500 focus:ring-primary-500"
-                } rounded-md p-2 text-white bg-gray-700 placeholder-gray-400
-                  transition-all duration-200 text-sm`}
-                placeholder="Task title"
-                autoFocus
-                aria-required="true"
-                aria-invalid={!!(touched.title && validationErrors.title)}
-                aria-describedby={validationErrors.title ? "title-error" : undefined}
-              />
-            )}
-          </TaskFormField>
-
-          {/* Description */}
-          <TaskFormField 
-            id="description"
-            label="Description"
-            icon={pencilIcon}
-            touched={touched.description}
-            error={validationErrors.description}
-          >
-            {useAI ? (
-              <AIEnhancedInput
-                id="description"
-                value={description || ""}
-                onChange={setDescription}
-                onBlur={() => handleBlur("description")}
-                placeholder="Description (optional)"
-                fieldType="description"
-                type="textarea"
-                rows={2}
-                touched={touched.description}
-                error={validationErrors.description}
-              />
-            ) : (
-              <textarea
-                id="description"
-                value={description || ""}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={() => handleBlur("description")}
-                rows={2}
-                className={`block w-full border ${
-                  touched.description && validationErrors.description
-                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-600 focus:border-primary-500 focus:ring-primary-500"
-                } rounded-md p-2 text-white bg-gray-700 placeholder-gray-400
-                  transition-all duration-200 text-sm`}
-                placeholder="Description (optional)"
-                aria-invalid={!!(touched.description && validationErrors.description)}
-                aria-describedby={validationErrors.description ? "description-error" : undefined}
-              />
-            )}
-          </TaskFormField>
-
-          {/* Priority */}
-          <PrioritySelector 
-            selectedPriority={priority} 
-            onPriorityChange={setPriority}
-          />
-
-          {/* Due Date & Estimated Duration */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Due Date */}
-            <TaskFormField 
-              id="due-date"
-              label="Due Date & Time"
-              icon={clockIcon}
-              touched={touched.dueDate}
-              error={validationErrors.dueDate}
-            >
-              <input
-                id="due-date"
-                type="datetime-local"
-                value={dueDate || ""}
-                min={formatDateForInput(new Date(), true)}
-                onChange={(e) => setDueDate(e.target.value)}
-                onBlur={() => handleBlur("dueDate")}
-                className={`block w-full border ${
-                  touched.dueDate && validationErrors.dueDate
-                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-600 focus:border-primary-500 focus:ring-primary-500"
-                } rounded-md p-2 text-white bg-gray-700 placeholder-gray-400
-                  transition-all duration-200 text-sm dark:[color-scheme:dark]`}
-                aria-invalid={!!(touched.dueDate && validationErrors.dueDate)}
-                aria-describedby={validationErrors.dueDate ? "dueDate-error" : undefined}
-              />
-            </TaskFormField>
-
-            {/* Estimated Duration */}
-            <TaskFormField 
-              id="estimated-duration"
-              label="Estimated Duration"
-              icon={clockIcon}
-              touched={touched.estimatedDuration}
-              error={validationErrors.estimatedDuration}
-            >
-              <input
-                id="estimated-duration"
-                type="number"
-                min="0"
-                max="1440"
-                value={estimatedDuration || ""}
-                onChange={(e) => setEstimatedDuration(Number(e.target.value))}
-                onBlur={() => handleBlur("estimatedDuration")}
-                className={`block w-full border ${
-                  touched.estimatedDuration &&
-                  validationErrors.estimatedDuration
-                    ? "border-red-500 focus:border-red-500 focus:ring-red-500"
-                    : "border-gray-600 focus:border-primary-500 focus:ring-primary-500"
-                } rounded-md p-2 text-white bg-gray-700 placeholder-gray-400
-                  transition-all duration-200 text-sm`}
-                placeholder="30"
-                aria-invalid={!!(touched.estimatedDuration && validationErrors.estimatedDuration)}
-                aria-describedby={validationErrors.estimatedDuration ? "estimatedDuration-error" : undefined}
-              />
-            </TaskFormField>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      
+      {error && (
+        <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-2 text-xs text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 mb-2">
+          <div className="flex">
+            <ExclamationCircleIcon className="h-3.5 w-3.5 text-red-500 dark:text-red-400 mr-1.5 flex-shrink-0" />
+            <span>{error}</span>
           </div>
-
-          {/* Emotional State */}
-          <EmotionSelector 
-            selectedEmotion={emotion} 
-            onEmotionChange={setEmotion}
-          />
-
-          {/* Categories */}
-          <CategorySelector 
-            categories={categories}
-            selectedCategories={selectedCategories}
-            onCategoryChange={setSelectedCategories}
-          />
-
-          {/* Display Error */}
-          {error && (
-            <div 
-              id="edit-form-error-message" 
-              className="bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-800 dark:text-red-200 px-4 py-3 rounded-md text-sm flex items-center gap-2"
-              role="alert"
-              aria-live="assertive"
-            >
-              <ExclamationCircleIcon className="h-5 w-5 text-red-500" aria-hidden="true" />
-              <span>{error}</span>
-            </div>
+        </div>
+      )}
+      
+      <div className="space-y-2">
+        {/* Title Input */}
+        <TaskFormField
+          id="title"
+          label="Title"
+          icon={<PencilIcon className="h-4 w-4" />}
+          error={touched.title ? validationErrors.title : undefined}
+        >
+          {useAI ? (
+            <AIEnhancedInput
+              id="title"
+              value={title}
+              onChange={setTitle}
+              onBlur={() => handleBlur("title")}
+              placeholder="Enter title"
+              error={touched.title ? validationErrors.title : undefined}
+              fieldType="title"
+            />
+          ) : (
+            <input
+              type="text"
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => handleBlur("title")}
+              placeholder="Enter title"
+              className="form-input py-1.5 text-sm"
+            />
           )}
-        </form>
-
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 p-3 border-t border-gray-700/70 bg-gray-800 sticky bottom-0">
+          
+          <div className="mt-1 flex items-center">
+            <button
+              type="button"
+              onClick={() => setUseAI(!useAI)}
+              className={`text-xs flex items-center ${
+                useAI ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              <SparklesIcon className="h-3 w-3 mr-0.5" />
+              <span>{useAI ? "AI Assist" : "AI Assist Off"}</span>
+            </button>
+          </div>
+        </TaskFormField>
+        
+        {/* Description TextArea */}
+        <TaskFormField
+          id="description"
+          label="Description"
+          error={touched.description ? validationErrors.description : undefined}
+        >
+          <textarea
+            id="description"
+            value={description || ""}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => handleBlur("description")}
+            rows={1}
+            placeholder="Enter description"
+            className="form-input py-1.5 text-sm min-h-[40px]"
+          />
+        </TaskFormField>
+        
+        <div className="grid grid-cols-2 gap-2">
+          {/* Priority Selector */}
+          <PrioritySelector
+            value={priority}
+            onChange={setPriority}
+            onBlur={() => handleBlur("priority")}
+            error={touched.priority ? validationErrors.priority : undefined}
+          />
+          
+          {/* Due Date Input */}
+          <TaskFormField
+            id="dueDate"
+            label="Due Date"
+            error={touched.dueDate ? validationErrors.dueDate : undefined}
+          >
+            <input
+              type="datetime-local"
+              id="dueDate"
+              value={dueDate || ""}
+              onChange={(e) => setDueDate(e.target.value)}
+              onBlur={() => handleBlur("dueDate")}
+              className="form-input py-1 text-sm dark:bg-gray-800 dark:[color-scheme:dark]"
+            />
+          </TaskFormField>
+        </div>
+        
+        {/* Category Selector - Keep full width for better UX */}
+        <CategorySelector
+          categories={categories}
+          selectedCategories={selectedCategories}
+          onChange={setSelectedCategories}
+          onBlur={() => handleBlur("categories")}
+          error={touched.categories ? validationErrors.categories : undefined}
+        />
+        
+        <div className="grid grid-cols-2 gap-2">
+          {/* Emotion Selector */}
+          <EmotionSelector
+            value={emotion}
+            onChange={setEmotion}
+            onBlur={() => handleBlur("emotion")}
+            error={touched.emotion ? validationErrors.emotion : undefined}
+          />
+          
+          {/* Duration Selector */}
+          <DurationSelector
+            value={estimatedDuration}
+            onChange={setEstimatedDuration}
+            onBlur={() => handleBlur("estimatedDuration")}
+            error={touched.estimatedDuration ? validationErrors.estimatedDuration : undefined}
+          />
+        </div>
+      </div>
+      
+      {/* Form Actions */}
+      <div className="pt-2 mt-2 flex justify-end items-center border-t border-gray-200 dark:border-gray-700">
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-sm text-gray-300 hover:text-white border border-gray-600 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors duration-200"
-            disabled={isSubmitting}
-            aria-label="Cancel edit"
+            className="btn btn-secondary py-1 px-3 text-sm"
           >
             Cancel
           </button>
           <button
             type="submit"
-            form="edit-task-form"
-            className="px-3 py-1.5 text-sm text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors duration-200 inline-flex items-center"
             disabled={isSubmitting}
-            aria-busy={isSubmitting}
+            className="btn btn-primary py-1 px-3 text-sm"
           >
             {isSubmitting ? (
-              <>
-                <svg
-                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
+              <span className="flex items-center">
+                <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Saving...
-              </>
-            ) : (
-              "Save Changes"
-            )}
+              </span>
+            ) : "Save Changes"}
           </button>
         </div>
       </div>
-    </>
+    </form>
   );
 }

@@ -210,7 +210,7 @@ export function FocusSessionHistory({ initialSessions, initialStats }: FocusSess
             <select
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value as '7days' | '30days' | 'all')}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="form-select w-full"
             >
               <option value="7days">Last 7 Days</option>
               <option value="30days">Last 30 Days</option>
@@ -225,7 +225,7 @@ export function FocusSessionHistory({ initialSessions, initialStats }: FocusSess
             <select
               value={filterType || ''}
               onChange={(e) => setFilterType(e.target.value || null)}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="form-select w-full"
             >
               <option value="">All Types</option>
               {getSessionTypes().map(type => (
@@ -241,7 +241,7 @@ export function FocusSessionHistory({ initialSessions, initialStats }: FocusSess
             <select
               value={filterTask || ''}
               onChange={(e) => setFilterTask(e.target.value || null)}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="form-select w-full"
             >
               <option value="">All Tasks</option>
               {getUniqueTasks().map(task => (

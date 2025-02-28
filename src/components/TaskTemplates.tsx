@@ -412,7 +412,7 @@ export function TaskTemplates() {
                         id="priority"
                         value={currentTemplate.priority}
                         onChange={(e) => setCurrentTemplate({...currentTemplate, priority: e.target.value as Priority})}
-                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                        className="form-select w-full"
                       >
                         <option value="NONE">None</option>
                         <option value="LOW">Low</option>
@@ -443,7 +443,7 @@ export function TaskTemplates() {
                         id="emotion"
                         value={currentTemplate.emotion || 'NEUTRAL'}
                         onChange={(e) => setCurrentTemplate({...currentTemplate, emotion: e.target.value as Emotion})}
-                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                        className="form-select w-full"
                       >
                         <option value="NEUTRAL">Neutral</option>
                         <option value="HAPPY">Happy</option>
@@ -478,11 +478,11 @@ export function TaskTemplates() {
                             onChange={(e) => setCurrentTemplate({
                               ...currentTemplate, 
                               recurrence: {
-                                ...(currentTemplate.recurrence || { interval: 1 }),
+                                ...currentTemplate.recurrence,
                                 frequency: e.target.value as 'daily' | 'weekly' | 'monthly'
                               }
                             })}
-                            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                            className="form-select w-full"
                           >
                             <option value="daily">Daily</option>
                             <option value="weekly">Weekly</option>

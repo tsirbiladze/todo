@@ -28,6 +28,22 @@ export const categorySchema = z.object({
   color: z.string().min(1, 'Color is required'),
 });
 
+// Add Goal schema
+export const goalSchema = z.object({
+  name: z.string()
+    .min(1, 'Goal name is required')
+    .max(255, 'Goal name must be less than 255 characters'),
+  description: z.string().optional(),
+  projectId: z.string({
+    required_error: 'Project ID is required',
+    invalid_type_error: 'Project ID must be a string'
+  }),
+  taskIds: z.array(z.string()).optional(),
+  tasks: z.array(z.any()).optional(), // Support both array of ids and array of objects
+});
+
+export const updateGoalSchema = goalSchema.partial();
+
 export const focusSessionSchema = z.object({
   taskId: z.string().optional(),
   startTime: z.string().datetime({ offset: true }),

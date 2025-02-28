@@ -1,54 +1,75 @@
-import React from 'react';
-import { ExclamationCircleIcon } from "@heroicons/react/24/outline";
+import React, { ReactNode } from 'react';
+import { ExclamationCircleIcon } from '@heroicons/react/24/outline';
 
 interface TaskFormFieldProps {
-  id: string;
+  id?: string;
   label: string;
-  icon?: React.ReactNode;
-  rightElement?: React.ReactNode;
+  icon?: ReactNode;
+  rightElement?: ReactNode;
   touched?: boolean;
   error?: string;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
+  description?: string;
 }
 
-export function TaskFormField({ 
-  id, 
-  label, 
-  icon, 
+export function TaskFormField({
+  id,
+  label,
+  icon,
   rightElement,
-  touched = false, 
-  error = '', 
+  touched,
+  error,
   children,
-  className = ''
+  className = '',
+  description
 }: TaskFormFieldProps) {
   const hasError = touched && error;
   
   return (
-    <div className={className}>
-      <div className="flex items-center justify-between text-xs font-medium text-gray-300 mb-1">
-        <div className="flex items-center">
-          {icon}
-          <label htmlFor={id}>{label}</label>
-        </div>
+    <div className={`space-y-1 ${className}`}>
+      <div className="flex items-center justify-between">
+        <label 
+          htmlFor={id}
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1"
+        >
+          {icon && (
+            <span className="text-gray-500 dark:text-gray-400">
+              {icon}
+            </span>
+          )}
+          {label}
+        </label>
         
         {rightElement && (
-          <div className="ml-auto">
+          <div className="flex items-center">
             {rightElement}
           </div>
         )}
       </div>
       
-      {children}
+      {description && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-0.5">
+          {description}
+        </p>
+      )}
+      
+      <div className="relative">
+        {children}
+      </div>
       
       {hasError && (
-        <div 
-          id={`${id}-error`} 
-          className="mt-1 text-xs text-red-400 flex items-center gap-1" 
-          aria-live="polite"
-        >
-          <ExclamationCircleIcon className="h-3 w-3" aria-hidden="true" />
-          {error}
+        <div className="flex items-start mt-1">
+          <ExclamationCircleIcon 
+            className="h-3.5 w-3.5 text-red-500 dark:text-red-400 mr-1 flex-shrink-0 mt-0.5" 
+            aria-hidden="true" 
+          />
+          <p 
+            className="text-xs text-red-600 dark:text-red-400" 
+            id={id ? `${id}-error` : undefined}
+          >
+            {error}
+          </p>
         </div>
       )}
     </div>

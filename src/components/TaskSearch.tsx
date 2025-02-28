@@ -78,7 +78,7 @@ export function TaskSearch() {
               onChange={(e) =>
                 setTaskFilters({ status: e.target.value as typeof taskFilters.status })
               }
-              className="w-full border rounded-lg px-3 py-2 text-gray-800 border-gray-300"
+              className="form-select w-full"
             >
               <option value="all">All Tasks</option>
               <option value="active">Active</option>
@@ -98,7 +98,7 @@ export function TaskSearch() {
                   priority: e.target.value ? Number(e.target.value) : null,
                 })
               }
-              className="w-full border rounded-lg px-3 py-2 text-gray-800 border-gray-300"
+              className="form-select w-full"
             >
               <option value="">Any Priority</option>
               <option value="4">Urgent</option>

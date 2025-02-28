@@ -432,7 +432,7 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Task Template</label>
               <select
-                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                className="form-select w-full"
                 value={selectedTemplate}
                 onChange={(e) => setSelectedTemplate(e.target.value)}
               >

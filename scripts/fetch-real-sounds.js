@@ -19,18 +19,31 @@ const path = require('path');
 const apiKey = process.argv[2];
 
 if (!apiKey) {
-  console.error('Missing API key. Please provide your FreeSoundAPI key as an argument:');
+  console.error('\x1b[31mError: Missing API key\x1b[0m');
+  console.error('Please provide your FreeSoundAPI key as an argument:');
   console.error('node scripts/fetch-real-sounds.js YOUR_API_KEY');
   console.error('\nGet your API key by registering at https://freesound.org/apiv2/apply/');
   process.exit(1);
 }
 
-const SOUNDS_DIR = path.join(__dirname, '../public/sounds');
+// Determine script directory and project root for reliable path resolution
+const SCRIPT_DIR = path.dirname(require.resolve(__filename));
+const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
+const SOUNDS_DIR = path.join(PROJECT_ROOT, 'public/sounds');
+
+console.log('\x1b[36m=== Focus Mode Sound Downloader ===\x1b[0m');
+console.log(`Project root: ${PROJECT_ROOT}`);
+console.log(`Sounds directory: ${SOUNDS_DIR}`);
 
 // Create soundsDir if it doesn't exist
 if (!fs.existsSync(SOUNDS_DIR)) {
   console.log(`Creating directory: ${SOUNDS_DIR}`);
-  fs.mkdirSync(SOUNDS_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(SOUNDS_DIR, { recursive: true });
+  } catch (error) {
+    console.error(`\x1b[31mFailed to create sounds directory: ${error.message}\x1b[0m`);
+    process.exit(1);
+  }
 }
 
 // Sound queries for each required file
@@ -70,6 +83,12 @@ const SOUNDS_TO_FETCH = [
     query: 'bell+ding',
     filter: 'duration:[0 TO 3]',
     description: 'Bell sound for timer'
+  },
+  { 
+    name: 'notification.mp3',
+    query: 'notification+soft',
+    filter: 'duration:[0 TO 3]',
+    description: 'Notification sound'
   },
   // For brainwaves, we'll search for specific frequencies
   { 
@@ -112,7 +131,12 @@ const SOUNDS_TO_FETCH = [
  */
 async function apiRequest(url, headers = {}) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers }, (response) => {
+    const request = https.get(url, { headers }, (response) => {
+      if (response.statusCode === 429) {
+        reject(new Error('Rate limit exceeded. Please wait a few minutes and try again.'));
+        return;
+      }
+      
       if (response.statusCode !== 200) {
         reject(new Error(`API request failed with status code: ${response.statusCode}`));
         return;
@@ -131,8 +155,16 @@ async function apiRequest(url, headers = {}) {
           reject(new Error(`Failed to parse API response: ${error.message}`));
         }
       });
-    }).on('error', (error) => {
+    });
+    
+    request.on('error', (error) => {
       reject(new Error(`API request error: ${error.message}`));
+    });
+    
+    // Set a timeout for the request
+    request.setTimeout(30000, () => {
+      request.abort();
+      reject(new Error('API request timed out after 30 seconds'));
     });
   });
 }
@@ -151,6 +183,8 @@ async function downloadFile(url, destPath, headers = {}) {
     const request = https.get(url, { headers }, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
         // Handle redirects
+        file.close();
+        fs.unlink(destPath, () => {});
         downloadFile(response.headers.location, destPath, headers)
           .then(resolve)
           .catch(reject);
@@ -158,6 +192,7 @@ async function downloadFile(url, destPath, headers = {}) {
       }
       
       if (response.statusCode !== 200) {
+        file.close();
         fs.unlink(destPath, () => {}); // Delete the file if the response status isn't 200
         reject(new Error(`Failed to download file: ${response.statusCode}`));
         return;
@@ -166,18 +201,44 @@ async function downloadFile(url, destPath, headers = {}) {
       response.pipe(file);
       
       file.on('finish', () => {
-        file.close(() => resolve());
+        file.close(() => {
+          // Verify the file was downloaded correctly
+          fs.stat(destPath, (err, stats) => {
+            if (err) {
+              reject(new Error(`Failed to verify downloaded file: ${err.message}`));
+              return;
+            }
+            
+            if (stats.size === 0) {
+              fs.unlink(destPath, () => {});
+              reject(new Error('Downloaded file is empty'));
+              return;
+            }
+            
+            resolve();
+          });
+        });
       });
     });
     
     request.on('error', (error) => {
+      file.close();
       fs.unlink(destPath, () => {}); // Delete the file on error
       reject(new Error(`Download error: ${error.message}`));
     });
     
     file.on('error', (error) => {
+      file.close();
       fs.unlink(destPath, () => {}); // Delete the file on error
       reject(new Error(`File error: ${error.message}`));
+    });
+    
+    // Set a timeout for the download
+    request.setTimeout(60000, () => {
+      request.abort();
+      file.close();
+      fs.unlink(destPath, () => {});
+      reject(new Error('Download timed out after 60 seconds'));
     });
   });
 }
@@ -201,18 +262,35 @@ async function searchSounds(query, filter) {
  * Fetch and download all required sounds
  */
 async function fetchSounds() {
-  console.log('Fetching sounds from FreeSoundAPI...');
+  console.log('\n\x1b[36mFetching sounds from FreeSoundAPI...\x1b[0m');
   console.log('This may take a few minutes depending on your internet connection.');
   
   const results = [];
+  let retryCount = 0;
+  const maxRetries = 3;
   
   for (const sound of SOUNDS_TO_FETCH) {
     try {
-      console.log(`\nSearching for ${sound.description}...`);
-      const searchResult = await searchSounds(sound.query, sound.filter);
+      console.log(`\n\x1b[33mSearching for ${sound.description}...\x1b[0m`);
       
-      if (!searchResult.results || searchResult.results.length === 0) {
-        console.error(`No results found for ${sound.description}`);
+      // Try up to maxRetries times
+      let searchResult = null;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          searchResult = await searchSounds(sound.query, sound.filter);
+          break; // Success, exit retry loop
+        } catch (error) {
+          if (attempt === maxRetries) {
+            throw error; // Rethrow on final attempt
+          }
+          console.log(`Retry ${attempt}/${maxRetries} after error: ${error.message}`);
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        }
+      }
+      
+      if (!searchResult || !searchResult.results || searchResult.results.length === 0) {
+        console.error(`\x1b[31mNo results found for ${sound.description}\x1b[0m`);
         results.push({ sound, success: false, error: 'No results found' });
         continue;
       }
@@ -224,7 +302,7 @@ async function fetchSounds() {
       // Get the preview URL - we'll use the high-quality preview
       const previewUrl = bestMatch.previews['preview-hq-mp3'];
       if (!previewUrl) {
-        console.error(`No high-quality preview available for ${sound.description}`);
+        console.error(`\x1b[31mNo high-quality preview available for ${sound.description}\x1b[0m`);
         results.push({ sound, success: false, error: 'No preview available' });
         continue;
       }
@@ -233,19 +311,32 @@ async function fetchSounds() {
       const filePath = path.join(SOUNDS_DIR, sound.name);
       console.log(`Downloading to ${sound.name}...`);
       
-      await downloadFile(previewUrl, filePath);
+      // Try up to maxRetries times
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await downloadFile(previewUrl, filePath);
+          break; // Success, exit retry loop
+        } catch (error) {
+          if (attempt === maxRetries) {
+            throw error; // Rethrow on final attempt
+          }
+          console.log(`Retry ${attempt}/${maxRetries} after error: ${error.message}`);
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        }
+      }
       
-      console.log(`✓ Successfully downloaded ${sound.name}`);
+      console.log(`\x1b[32m✓ Successfully downloaded ${sound.name}\x1b[0m`);
       results.push({ sound, success: true });
       
     } catch (error) {
-      console.error(`Error fetching ${sound.description}: ${error.message}`);
+      console.error(`\x1b[31mError fetching ${sound.description}: ${error.message}\x1b[0m`);
       results.push({ sound, success: false, error: error.message });
     }
   }
   
   // Generate summary
-  console.log('\n=== DOWNLOAD SUMMARY ===');
+  console.log('\n\x1b[36m=== DOWNLOAD SUMMARY ===\x1b[0m');
   const successful = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).length;
   
@@ -253,7 +344,7 @@ async function fetchSounds() {
   console.log(`Failed: ${failed}/${SOUNDS_TO_FETCH.length}`);
   
   if (failed > 0) {
-    console.log('\nFailed downloads:');
+    console.log('\n\x1b[33mFailed downloads:\x1b[0m');
     results
       .filter(r => !r.success)
       .forEach(r => {
@@ -261,15 +352,22 @@ async function fetchSounds() {
       });
       
     console.log('\nYou can try running the script again or manually download these files.');
-    console.log('For any missing files, the app will use the placeholder files.');
+    console.log('For any missing files, the app will use placeholder files if available.');
   }
   
   if (successful > 0) {
-    console.log('\nAudio files have been downloaded to the public/sounds directory.');
+    console.log('\n\x1b[32mAudio files have been downloaded to the public/sounds directory.\x1b[0m');
     console.log('The Focus Mode will now use these files for ambient sounds and brainwaves.');
+    
+    // Suggest running the trim script if needed
+    if (successful > 0) {
+      console.log('\n\x1b[33mNext steps:\x1b[0m');
+      console.log('1. Run the trim script to ensure all sounds are 10 minutes or less:');
+      console.log('   bash scripts/trim-sounds.sh');
+    }
   }
   
-  console.log('\nIMPORTANT: These files are licensed for personal use only.');
+  console.log('\n\x1b[33mIMPORTANT: These files are licensed for personal use only.\x1b[0m');
   console.log('Check the FreeSoundAPI terms and each sound\'s license for commercial usage.');
 }
 
@@ -278,7 +376,7 @@ async function fetchSounds() {
   try {
     await fetchSounds();
   } catch (error) {
-    console.error(`\nAn error occurred: ${error.message}`);
+    console.error(`\n\x1b[31mAn error occurred: ${error.message}\x1b[0m`);
     process.exit(1);
   }
 })(); 
