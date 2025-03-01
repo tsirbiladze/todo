@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { 
-  errorResponse, 
-  getAuthenticatedUserId, 
-  notFoundResponse, 
-  successResponse, 
-  unauthorizedResponse, 
-  verifyResourceOwnership 
-} from '@/lib/server/api-helpers';
-import { logger } from '@/lib/logger';
-import { z } from 'zod';
+import { projectSchema, updateProjectSchema, validateData } from '@/lib/server/validation';
+import {
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  forbiddenResponse,
+  errorResponse,
+  handleCommonErrors,
+  HttpStatus,
+  getAuthenticatedUserId,
+  verifyResourceOwnership
+} from '@/lib/server/api';
 
 type RouteParams = {
   params: {
@@ -17,49 +19,7 @@ type RouteParams = {
   };
 };
 
-// Project validation schema
-const projectSchema = z.object({
-  name: z.string().min(1, 'Project name is required').max(100, 'Project name must be 100 characters or less'),
-  description: z.string().optional(),
-  color: z.string().optional(),
-  status: z.enum(['ACTIVE', 'COMPLETED', 'ARCHIVED']).optional(),
-  dueDate: z.string().datetime({ offset: true }).optional().nullable(),
-});
-
-// Update schema is a partial of the full schema
-const updateProjectSchema = projectSchema.partial();
-
-// Helper function to validate project data
-async function validateProjectData(data: any, isUpdate = false) {
-  const schema = isUpdate ? updateProjectSchema : projectSchema;
-  try {
-    return { 
-      success: true, 
-      data: await schema.parseAsync(data),
-      error: null
-    };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const errorMessages = error.errors.map(err => 
-        `${err.path.join('.')}: ${err.message}`
-      ).join(', ');
-      
-      return {
-        success: false,
-        data: null,
-        error: errorMessages,
-      };
-    }
-    
-    return {
-      success: false,
-      data: null,
-      error: 'Invalid data format',
-    };
-  }
-}
-
-// GET /api/projects/[id] - Get a single project by ID
+// GET /api/projects/[projectId] - Get a single project by ID
 export async function GET(
   req: NextRequest,
   { params }: RouteParams
@@ -71,38 +31,67 @@ export async function GET(
       return unauthorizedResponse();
     }
     
-    const projectId = params.id;
+    const { id } = params;
     
-    // Verify the project exists and belongs to the user
-    const isOwner = await verifyResourceOwnership('project', projectId, userId);
-    
-    if (!isOwner) {
-      return notFoundResponse('Project', projectId);
-    }
-    
+    // Get the project with related data
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { id: id },
       include: {
-        tasks: {
+        goals: {
           include: {
-            categories: true
+            tasks: {
+              select: {
+                id: true,
+                title: true,
+                priority: true,
+                dueDate: true,
+                completedAt: true,
+                categories: true
+              }
+            },
+            _count: {
+              select: { tasks: true }
+            }
           }
+        },
+        _count: {
+          select: { goals: true }
         }
       }
     });
     
-    return successResponse({ project });
-  } catch (error) {
-    logger.error('Error fetching project:', {
-      component: 'api/projects/[id]/GET',
-      data: error
-    });
+    if (!project) {
+      return notFoundResponse('Project');
+    }
     
-    return errorResponse('Failed to fetch project', 500);
+    // Verify ownership
+    if (project.userId !== userId) {
+      return forbiddenResponse();
+    }
+    
+    // Calculate task totals
+    const taskCount = project.goals.reduce((sum, goal) => sum + goal._count.tasks, 0);
+    const completedTaskCount = project.goals.reduce(
+      (sum, goal) => sum + goal.tasks.filter(task => task.completedAt).length, 
+      0
+    );
+    
+    return successResponse({ 
+      project: {
+        ...project,
+        goalCount: project._count.goals,
+        taskCount,
+        completedTaskCount,
+        progress: taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 0,
+        _count: undefined // Remove the _count property from the response
+      }
+    });
+  } catch (error) {
+    return handleCommonErrors(error, 'api/projects/[projectId]/GET');
   }
 }
 
-// PUT /api/projects/[id] - Update a project
+// PUT /api/projects/[projectId] - Update a project (complete replacement)
 export async function PUT(
   req: NextRequest,
   { params }: RouteParams
@@ -114,77 +103,52 @@ export async function PUT(
       return unauthorizedResponse();
     }
     
-    const projectId = params.id;
+    const { id } = params;
     
-    // Verify the project exists and belongs to the user
-    const isOwner = await verifyResourceOwnership('project', projectId, userId);
+    // Check if the project exists and belongs to the user
+    const isOwner = await verifyResourceOwnership(
+      id,
+      userId,
+      prisma.project
+    );
     
     if (!isOwner) {
-      return notFoundResponse('Project', projectId);
+      return notFoundResponse('Project');
     }
     
-    const data = await req.json();
+    const body = await req.json();
     
-    // Validate the data
-    const { success, data: validatedData, error } = await validateProjectData(data);
+    // Validate the request body
+    const validation = await validateData(projectSchema, body);
     
-    if (!success || !validatedData) {
-      return errorResponse(error || 'Invalid data format', 400);
+    if (!validation.success) {
+      return errorResponse(`Validation error: ${validation.error}`, HttpStatus.BAD_REQUEST);
     }
-    
-    // Check for name conflicts (only if name is being updated)
-    if (validatedData.name) {
-      const existingProject = await prisma.project.findFirst({
-        where: {
-          userId,
-          name: {
-            equals: validatedData.name,
-            mode: 'insensitive' // Case insensitive comparison
-          },
-          id: {
-            not: projectId // Exclude current project
-          }
-        }
-      });
-      
-      if (existingProject) {
-        return errorResponse('A project with this name already exists', 400);
-      }
-    }
-    
-    // Prepare update data with date conversion
-    const updateData = {
-      ...validatedData,
-      dueDate: validatedData.dueDate ? new Date(validatedData.dueDate) : null
-    };
     
     // Update the project
-    const updatedProject = await prisma.project.update({
-      where: { id: projectId },
-      data: updateData,
+    const project = await prisma.project.update({
+      where: { id: id },
+      data: validation.data,
       include: {
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            status: true
-          }
+        _count: {
+          select: { goals: true }
         }
       }
     });
     
-    return successResponse({ project: updatedProject });
-  } catch (error) {
-    logger.error('Error updating project:', {
-      component: 'api/projects/[id]/PUT',
-      data: error
+    return successResponse({ 
+      project: {
+        ...project,
+        goalCount: project._count.goals,
+        _count: undefined // Remove the _count property from the response
+      }
     });
-    
-    return errorResponse('Failed to update project', 500);
+  } catch (error) {
+    return handleCommonErrors(error, 'api/projects/[projectId]/PUT');
   }
 }
 
-// PATCH /api/projects/[id] - Partially update a project
+// PATCH /api/projects/[projectId] - Partially update a project
 export async function PATCH(
   req: NextRequest,
   { params }: RouteParams
@@ -196,79 +160,52 @@ export async function PATCH(
       return unauthorizedResponse();
     }
     
-    const projectId = params.id;
+    const { id } = params;
     
-    // Verify the project exists and belongs to the user
-    const isOwner = await verifyResourceOwnership('project', projectId, userId);
+    // Check if the project exists and belongs to the user
+    const isOwner = await verifyResourceOwnership(
+      id,
+      userId,
+      prisma.project
+    );
     
     if (!isOwner) {
-      return notFoundResponse('Project', projectId);
+      return notFoundResponse('Project');
     }
     
-    const patchData = await req.json();
+    const body = await req.json();
     
-    // Validate with partial schema
-    const { success, data: validatedData, error } = await validateProjectData(patchData, true);
+    // Validate the request body
+    const validation = await validateData(updateProjectSchema, body);
     
-    if (!success || !validatedData) {
-      return errorResponse(error || 'Invalid data format', 400);
+    if (!validation.success) {
+      return errorResponse(`Validation error: ${validation.error}`, HttpStatus.BAD_REQUEST);
     }
-    
-    // Check for name conflicts (only if name is being updated)
-    if (validatedData.name) {
-      const existingProject = await prisma.project.findFirst({
-        where: {
-          userId,
-          name: {
-            equals: validatedData.name,
-            mode: 'insensitive' // Case insensitive comparison
-          },
-          id: {
-            not: projectId // Exclude current project
-          }
-        }
-      });
-      
-      if (existingProject) {
-        return errorResponse('A project with this name already exists', 400);
-      }
-    }
-    
-    // Convert date if provided
-    const updateData = {
-      ...validatedData,
-      dueDate: validatedData.dueDate !== undefined 
-        ? (validatedData.dueDate ? new Date(validatedData.dueDate) : null)
-        : undefined
-    };
     
     // Update the project
-    const updatedProject = await prisma.project.update({
-      where: { id: projectId },
-      data: updateData,
+    const project = await prisma.project.update({
+      where: { id: id },
+      data: validation.data,
       include: {
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            status: true
-          }
+        _count: {
+          select: { goals: true }
         }
       }
     });
     
-    return successResponse({ project: updatedProject });
-  } catch (error) {
-    logger.error('Error patching project:', {
-      component: 'api/projects/[id]/PATCH',
-      data: error
+    return successResponse({ 
+      project: {
+        ...project,
+        goalCount: project._count.goals,
+        _count: undefined // Remove the _count property from the response
+      }
     });
-    
-    return errorResponse('Failed to update project', 500);
+  } catch (error) {
+    return handleCommonErrors(error, 'api/projects/[projectId]/PATCH');
   }
 }
 
-// DELETE /api/projects/[id] - Delete a project
+// DELETE /api/projects/[projectId] - Delete a project
 export async function DELETE(
   req: NextRequest,
   { params }: RouteParams
@@ -280,55 +217,28 @@ export async function DELETE(
       return unauthorizedResponse();
     }
     
-    const projectId = params.id;
+    const { id } = params;
     
-    // Verify the project exists and belongs to the user
-    const isOwner = await verifyResourceOwnership('project', projectId, userId);
+    // Check if the project exists and belongs to the user
+    const isOwner = await verifyResourceOwnership(
+      id,
+      userId,
+      prisma.project
+    );
     
     if (!isOwner) {
-      return notFoundResponse('Project', projectId);
-    }
-    
-    // Check if there are tasks associated with this project
-    const tasksCount = await prisma.task.count({
-      where: { projectId }
-    });
-    
-    // Get query parameters for cascade option
-    const { searchParams } = new URL(req.url);
-    const cascade = searchParams.get('cascade') === 'true';
-    
-    // If there are associated tasks and cascade is not enabled, return an error
-    if (tasksCount > 0 && !cascade) {
-      return errorResponse(
-        `Cannot delete project with ${tasksCount} associated tasks. Set cascade=true to delete tasks as well.`,
-        400
-      );
-    }
-    
-    // If cascade is enabled, delete all associated tasks first
-    if (cascade && tasksCount > 0) {
-      // Delete all tasks associated with this project
-      await prisma.task.deleteMany({
-        where: { projectId }
-      });
+      return notFoundResponse('Project');
     }
     
     // Delete the project
     await prisma.project.delete({
-      where: { id: projectId }
+      where: { id: id }
     });
     
     return successResponse({ 
-      message: 'Project deleted successfully',
-      tasksDeleted: cascade ? tasksCount : 0
+      message: 'Project deleted successfully'
     });
   } catch (error) {
-    logger.error('Error deleting project:', {
-      component: 'api/projects/[id]/DELETE',
-      data: error
-    });
-    
-    return errorResponse('Failed to delete project', 500);
+    return handleCommonErrors(error, 'api/projects/[projectId]/DELETE');
   }
 } 

@@ -53,6 +53,7 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   
   // Form state for creating/editing a recurring task
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
@@ -66,23 +67,62 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
   const fetchData = async () => {
     setIsLoading(true);
     setError(null);
+    setDebugInfo(null);
     
     try {
       // Fetch task templates
-      const templatesRes = await fetch('/api/task-templates');
-      if (!templatesRes.ok) throw new Error('Failed to fetch templates');
+      console.log("Fetching templates...");
+      const templatesRes = await fetch('/api/templates');
+      console.log("Template API response status:", templatesRes.status);
+      
+      let debugMessage = `Template API status: ${templatesRes.status} ${templatesRes.statusText}\n`;
+      
+      if (!templatesRes.ok) throw new Error(`Failed to fetch templates: ${templatesRes.status} ${templatesRes.statusText}`);
+      
       const templatesData = await templatesRes.json();
+      console.log("Template data received:", templatesData);
+      
+      debugMessage += `Template data type: ${typeof templatesData}\n`;
+      debugMessage += `Is Array: ${Array.isArray(templatesData)}\n`;
+      
+      if (typeof templatesData === 'object') {
+        debugMessage += `Keys: ${Object.keys(templatesData).join(', ')}\n`;
+        if (templatesData.templates) {
+          debugMessage += `templates property type: ${typeof templatesData.templates}\n`;
+          debugMessage += `templates property is Array: ${Array.isArray(templatesData.templates)}\n`;
+          if (Array.isArray(templatesData.templates)) {
+            debugMessage += `templates length: ${templatesData.templates.length}\n`;
+          }
+        }
+      }
+      
+      setDebugInfo(debugMessage);
+      
+      // Ensure templates is always an array
+      if (templatesData.templates && Array.isArray(templatesData.templates)) {
+        console.log(`Setting ${templatesData.templates.length} templates`);
+        setTemplates(templatesData.templates);
+      } else if (Array.isArray(templatesData)) {
+        // Maybe the API returns the array directly without a 'templates' property
+        console.log(`Setting ${templatesData.length} templates (direct array)`);
+        setTemplates(templatesData);
+      } else {
+        console.error("Invalid template data received:", templatesData);
+        setTemplates([]); // Fallback to empty array
+      }
       
       // Fetch recurring tasks with preview
+      console.log("Fetching recurring tasks...");
       const tasksRes = await fetch('/api/recurring-tasks?preview=true');
-      if (!tasksRes.ok) throw new Error('Failed to fetch recurring tasks');
-      const tasksData = await tasksRes.json();
+      if (!tasksRes.ok) throw new Error(`Failed to fetch recurring tasks: ${tasksRes.status} ${tasksRes.statusText}`);
       
-      setTemplates(templatesData.templates);
-      setRecurringTasks(tasksData.recurringTasks);
+      const tasksData = await tasksRes.json();
+      console.log("Recurring tasks data:", tasksData);
+      
+      setRecurringTasks(tasksData.recurringTasks || []);
     } catch (err) {
+      console.error("Error in fetchData:", err);
       setError('Failed to load data. Please try again.');
-      console.error(err);
     } finally {
       setIsLoading(false);
     }
@@ -90,6 +130,8 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
   
   // Replace useEffect with the new fetchData function
   useEffect(() => {
+    // Initialize templates as empty array to prevent undefined errors
+    setTemplates([]);
     fetchData();
   }, []);
   
@@ -102,8 +144,14 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
     
     try {
       setIsLoading(true);
+      setError(null);
       
       const formattedPattern = formatRecurrencePattern(recurrencePattern);
+      console.log("Creating recurring task with data:", {
+        templateId: selectedTemplate,
+        nextDueDate,
+        ...formattedPattern
+      });
       
       const response = await fetch('/api/recurring-tasks', {
         method: 'POST',
@@ -117,11 +165,22 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
         }),
       });
       
+      console.log("API response status:", response.status, response.statusText);
+      
       if (!response.ok) {
-        throw new Error('Failed to create recurring task');
+        const errorText = await response.text();
+        console.error("Error response body:", errorText);
+        throw new Error(`Failed to create recurring task: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
+      console.log("Response data:", data);
+      
+      if (!data.recurringTask) {
+        console.error("Missing recurringTask in response data:", data);
+        setError("Response missing recurringTask data");
+        return;
+      }
       
       // Add the new recurring task to the state
       setRecurringTasks(prev => [...prev, data.recurringTask]);
@@ -135,9 +194,15 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
       });
       setIsCreating(false);
       
+      // Show success message
+      setSuccessMessage("Recurring task created successfully!");
+      
+      // Refresh data to ensure we have the latest
+      fetchData();
+      
     } catch (err) {
-      setError('Failed to create recurring task. Please try again.');
-      console.error(err);
+      console.error("Error creating recurring task:", err);
+      setError(`Failed to create recurring task: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsLoading(false);
     }
@@ -242,8 +307,20 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
   };
   
   // Get template name by ID
-  const getTemplateName = (templateId: string): string => {
-    const template = templates.find(t => t.id === templateId);
+  const getTemplateName = (task: RecurringTask): string => {
+    if (!task) return 'Unknown Task';
+    
+    if (!templates || templates.length === 0) {
+      return 'Loading template...';
+    }
+    
+    // First check if the task has template information directly
+    if (task.template && task.template.name) {
+      return task.template.name;
+    }
+    
+    // Fallback to finding template by ID
+    const template = templates.find(t => t.id === task.templateId);
     return template ? template.name : 'Unknown Template';
   };
   
@@ -384,6 +461,15 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
         </div>
       )}
       
+      {debugInfo && (
+        <div className="p-3 mb-4 bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-300 rounded-md text-xs font-mono whitespace-pre-wrap">
+          <details>
+            <summary className="cursor-pointer">Debug Info</summary>
+            {debugInfo}
+          </details>
+        </div>
+      )}
+      
       {/* Actions toolbar */}
       {!isCreating && !isEditing && (
         <div className="flex flex-wrap gap-2 mb-6">
@@ -395,6 +481,12 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
             <PlusIcon className="w-5 h-5 mr-2" />
             Create New Recurring Task
           </button>
+          
+          {templates.length === 0 && !isLoading && (
+            <div className="ml-2 flex items-center text-amber-600 dark:text-amber-400">
+              <span className="text-sm">No templates available. Create templates first.</span>
+            </div>
+          )}
           
           <button
             onClick={() => handleGenerateTasks()}
@@ -427,6 +519,23 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
             {isEditing ? 'Edit Recurring Task' : 'Create New Recurring Task'}
           </h3>
           
+          {templates.length === 0 && (
+            <div className="p-3 mb-4 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 rounded-md">
+              <p>No task templates found. You need to create task templates before you can create recurring tasks.</p>
+              <button 
+                onClick={() => {
+                  // Close this panel
+                  setIsCreating(false);
+                  setIsEditing(null);
+                  // You could redirect to template creation page here if you have that functionality
+                }}
+                className="mt-2 text-blue-600 dark:text-blue-400 underline"
+              >
+                Go create templates
+              </button>
+            </div>
+          )}
+          
           <div className="space-y-4">
             {/* Template selection */}
             <div>
@@ -435,14 +544,20 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
                 className="form-select w-full"
                 value={selectedTemplate}
                 onChange={(e) => setSelectedTemplate(e.target.value)}
+                disabled={templates.length === 0}
               >
                 <option value="">Select a template</option>
-                {templates.map((template) => (
+                {(templates || []).map((template) => (
                   <option key={template.id} value={template.id}>
                     {template.name}
                   </option>
                 ))}
               </select>
+              {templates.length === 0 && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  You need to create templates first
+                </p>
+              )}
             </div>
             
             {/* Next due date */}
@@ -526,7 +641,7 @@ export function RecurringTaskManager({ onClose }: RecurringTaskManagerProps) {
                         />
                       )}
                       <div>
-                        <h4 className="font-medium text-gray-900 dark:text-white">{getTemplateName(task.templateId)}</h4>
+                        <h4 className="font-medium text-gray-900 dark:text-white">{getTemplateName(task)}</h4>
                         <div className="flex items-center text-sm text-gray-600 dark:text-gray-400 mt-1">
                           <ArrowPathIcon className="w-4 h-4 mr-1" />
                           <span>{getPatternDescription(task)}</span>

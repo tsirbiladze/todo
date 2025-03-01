@@ -19,73 +19,7 @@ interface RecurringTaskInput {
   count?: number;
 }
 
-// Helper function to calculate next occurrence based on recurrence pattern
-function calculateNextOccurrence(
-  currentDate: Date,
-  frequency: RecurrenceFrequency,
-  interval: number,
-  daysOfWeek?: string,
-  dayOfMonth?: number,
-  monthOfYear?: number
-): Date {
-  let nextDate = new Date(currentDate);
-  
-  switch (frequency) {
-    case 'DAILY':
-      nextDate = addDays(currentDate, interval);
-      break;
-    case 'WEEKLY':
-      nextDate = addWeeks(currentDate, interval);
-      
-      // If specific days of week are specified
-      if (daysOfWeek) {
-        const days = JSON.parse(daysOfWeek) as number[];
-        // TODO: Implement more complex weekly recurrence logic
-        // This would find the next occurrence on one of the specified days
-      }
-      break;
-    case 'MONTHLY':
-      nextDate = addMonths(currentDate, interval);
-      
-      // If a specific day of month is specified
-      if (dayOfMonth) {
-        nextDate.setDate(dayOfMonth);
-        // Handle case where day doesn't exist in month
-        if (nextDate.getDate() !== dayOfMonth) {
-          // Set to last day of previous month
-          nextDate.setDate(0);
-        }
-      }
-      break;
-    case 'YEARLY':
-      nextDate = addYears(currentDate, interval);
-      
-      // If specific month is specified
-      if (monthOfYear) {
-        nextDate.setMonth(monthOfYear - 1); // Month is 0-indexed in JS
-        
-        // If day of month is also specified
-        if (dayOfMonth) {
-          nextDate.setDate(dayOfMonth);
-          // Handle case where day doesn't exist in month
-          if (nextDate.getDate() !== dayOfMonth) {
-            // Set to last day of the month
-            nextDate.setDate(0);
-          }
-        }
-      }
-      break;
-    case 'CUSTOM':
-      // For custom recurrence, we'd implement more complex logic
-      // This is a placeholder for now
-      nextDate = addDays(currentDate, interval);
-      break;
-  }
-  
-  return nextDate;
-}
-
-// Helper to generate a task from a template and recurring task
+// Helper to generate a task from a template
 async function generateTaskFromTemplate(
   userId: string,
   templateId: string,
@@ -147,9 +81,11 @@ async function generateTaskFromTemplate(
 // Create a new recurring task
 export async function POST(request: Request) {
   try {
+    console.log("Received POST request to create recurring task");
     const session = await getServerSession(authOptions);
     
     if (!session?.user?.email) {
+      console.log("Error: Unauthorized - no user session");
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -157,6 +93,8 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json() as RecurringTaskInput;
+    console.log("Request data received:", JSON.stringify(data, null, 2));
+    
     const { 
       templateId, 
       nextDueDate, 
@@ -170,20 +108,65 @@ export async function POST(request: Request) {
       count 
     } = data;
 
+    // Validate required fields
+    if (!templateId) {
+      console.log("Error: Missing required field - templateId");
+      return NextResponse.json(
+        { error: 'Missing required field: templateId' },
+        { status: 400 }
+      );
+    }
+
+    if (!nextDueDate) {
+      console.log("Error: Missing required field - nextDueDate");
+      return NextResponse.json(
+        { error: 'Missing required field: nextDueDate' },
+        { status: 400 }
+      );
+    }
+
     // Get the user ID based on the email from the session
+    console.log("Finding user with email:", session.user.email);
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true },
     });
 
     if (!user) {
+      console.log("Error: User not found with email:", session.user.email);
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
+    console.log("Found user with ID:", user.id);
+
+    // Verify template exists
+    console.log("Checking if template exists with ID:", templateId);
+    const template = await prisma.taskTemplate.findUnique({
+      where: { id: templateId },
+    });
+
+    if (!template) {
+      console.log("Error: Template not found with ID:", templateId);
+      return NextResponse.json(
+        { error: 'Template not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log("Found template:", template.name);
+
     // Create or update recurring task schedule
+    console.log("Creating recurring task with data:", {
+      templateId,
+      userId: user.id,
+      nextDueDate,
+      frequency,
+      interval
+    });
+    
     const recurringTask = await prisma.recurringTask.create({
       data: {
         templateId,
@@ -200,11 +183,21 @@ export async function POST(request: Request) {
       },
     });
 
+    console.log("Successfully created recurring task:", recurringTask.id);
+    
     return NextResponse.json({ recurringTask });
   } catch (error) {
     console.error('Error creating recurring task:', error);
+    
+    // More detailed error logging
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to create recurring task' },
+      { error: error instanceof Error ? error.message : 'Failed to create recurring task' },
       { status: 500 }
     );
   }
@@ -244,22 +237,39 @@ export async function GET(req: NextRequest) {
         userId: user.id,
       },
       include: {
-        template: {
-          include: {
-            categories: true
-          }
-        }
+        // The template relation doesn't exist in the Prisma schema
+        // Remove the template include
       },
       orderBy: {
         nextDueDate: 'asc',
       },
     });
 
+    // Get template information separately since there's no direct relation
+    const templateIds = [...new Set(recurringTasks.map(task => task.templateId))];
+    const templates = await prisma.taskTemplate.findMany({
+      where: {
+        id: {
+          in: templateIds
+        }
+      },
+      include: {
+        categories: true
+      }
+    });
+
+    // Create a lookup for templates
+    const templateMap = templates.reduce((map, template) => {
+      map[template.id] = template;
+      return map;
+    }, {} as Record<string, any>);
+
     // If preview requested, add upcoming occurrences
-    let recurringTasksWithPreviews = recurringTasks;
-    
-    if (preview) {
-      recurringTasksWithPreviews = recurringTasks.map(task => {
+    let recurringTasksWithPreviews = recurringTasks.map(task => {
+      // Add template information
+      const template = templateMap[task.templateId] || null;
+      
+      if (preview) {
         const previewOccurrences = generateOccurrences(
           new Date(task.nextDueDate),
           {
@@ -275,10 +285,16 @@ export async function GET(req: NextRequest) {
         
         return {
           ...task,
+          template,
           previewOccurrences
         };
-      });
-    }
+      }
+      
+      return {
+        ...task,
+        template
+      };
+    });
 
     return NextResponse.json({ recurringTasks: recurringTasksWithPreviews });
   } catch (error) {
@@ -288,67 +304,6 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Generate a preview of upcoming occurrences
-export async function POST(request: NextRequest) {
-  // Check URL to distinguish between create and preview
-  if (request.nextUrl.searchParams.get('action') === 'preview') {
-    try {
-      const session = await getServerSession(authOptions);
-      
-      if (!session?.user?.email) {
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
-
-      const data = await request.json();
-      const { 
-        startDate, 
-        frequency = 'DAILY', 
-        interval = 1,
-        daysOfWeek,
-        dayOfMonth,
-        monthOfYear,
-        endDate,
-        count = 5
-      } = data;
-
-      if (!startDate) {
-        return NextResponse.json(
-          { error: 'Start date is required' },
-          { status: 400 }
-        );
-      }
-
-      // Generate preview occurrences
-      const occurrences = generateOccurrences(
-        new Date(startDate),
-        {
-          frequency: frequency as RecurrenceFrequency,
-          interval,
-          daysOfWeek,
-          dayOfMonth,
-          monthOfYear
-        },
-        count,
-        endDate ? new Date(endDate) : undefined
-      );
-
-      return NextResponse.json({ occurrences });
-    } catch (error) {
-      console.error('Error generating preview:', error);
-      return NextResponse.json(
-        { error: 'Failed to generate preview' },
-        { status: 500 }
-      );
-    }
-  }
-  
-  // Otherwise, treat as normal POST for creating a recurring task
-  return POST(request as unknown as Request);
 }
 
 // Create a new endpoint to get all recurring tasks for the user

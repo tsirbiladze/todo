@@ -4,6 +4,7 @@ import { TagIcon, FaceSmileIcon, PencilIcon, SparklesIcon, PlusIcon, Exclamation
 import { validateTaskField, validateTaskForm } from "@/lib/validations";
 import { numberToPriority, stringToEmotion } from "@/lib/type-conversions";
 import { formatDateForInput } from "@/lib/date-utils";
+import { EMOTION_MAP } from "@/data/emotions";
 import { AIEnhancedInput } from './ui/AIEnhancedInput';
 import { TaskFormField } from './form-components/TaskFormField';
 import { CategorySelector } from './form-components/CategorySelector';
@@ -14,6 +15,7 @@ import { AudioRecorder } from './form-components/AudioRecorder';
 import { TemplateSelector } from './form-components/TemplateSelector';
 import { DraftManager } from './form-components/DraftManager';
 import { useTranslation } from '@/lib/i18n';
+import { TaskApi } from '@/lib/api';
 
 interface FormData {
   title: string;
@@ -148,29 +150,30 @@ export function AddTaskForm({ onClose }: { onClose: () => void }) {
         
         // Validate form
         if (!validateForm()) {
-            setError("Please fix the errors in the form.");
+            console.log("Form validation failed:", validationErrors);
+            setError("Please fix form errors before submitting");
             return;
         }
         
+        setError("");
         setIsSubmitting(true);
-        setError(null);
         
         try {
-            // Create the task data
+            // Prepare task data
             const taskData = {
                 title,
                 description,
                 priority: numberToPriority(priority),
                 dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-                emotion: stringToEmotion(emotion),
-                estimatedDuration: estimatedDuration || 0,
-                categories: selectedCategories.map(id => ({ id })),
-                // If you're storing audio, you'd need to handle this differently
-                // This is simplified for this refactoring example
-                audioNote: audioURL || undefined,
+                categoryIds: selectedCategories,
+                emotion: emotion ? stringToEmotion(emotion) : null,
+                estimatedDuration: estimatedDuration || null,
+                audioURL,
             };
             
-            // Call the API to create the task
+            console.log("🚀 Submitting task data:", taskData);
+            
+            console.log("📤 About to send request to /api/tasks");
             const response = await fetch("/api/tasks", {
                 method: "POST",
                 headers: {
@@ -179,24 +182,84 @@ export function AddTaskForm({ onClose }: { onClose: () => void }) {
                 body: JSON.stringify(taskData),
             });
             
+            // Log response status
+            console.log("📥 API response status:", response.status);
+            console.log("📥 API response status text:", response.statusText);
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || "Failed to create task");
+                const errorText = await response.text();
+                console.error("❌ API error response text:", errorText);
+                
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                    console.error("❌ API error response parsed:", errorData);
+                } catch (parseErr) {
+                    console.error("❌ Failed to parse error response:", parseErr);
+                }
+                
+                throw new Error(errorData?.error || `Failed to create task: ${response.status} ${response.statusText}`);
             }
             
-            const newTask = await response.json();
+            const responseJson = await response.json();
+            console.log("✅ API response data (full):", JSON.stringify(responseJson));
             
-            // Update local state with the new task
-            addTask(newTask.task);
+            // The API returns { data: { task }, success: true }
+            // We need to check for responseJson.data.task
+            if (responseJson.data && responseJson.data.task) {
+                console.log("✅ Task data found in response:", responseJson.data.task);
+                console.log("🆔 Task ID:", responseJson.data.task.id);
+                console.log("💾 Adding task to store...");
+                
+                // Direct store update for most reliable results
+                const store = useStore.getState();
+                store.addTask(responseJson.data.task);
+                
+                console.log("✅ Task added to store successfully");
+                
+                // Refresh all tasks from the server to ensure UI is up to date
+                try {
+                    console.log("🔄 Refreshing all tasks from server");
+                    const tasksResponse = await TaskApi.getAllTasks();
+                    if (tasksResponse.data && tasksResponse.data.tasks) {
+                        console.log("📋 Received tasks from server:", tasksResponse.data.tasks.length);
+                        
+                        // Direct store update
+                        store.setTasks(tasksResponse.data.tasks);
+                        
+                        // Verify store state
+                        setTimeout(() => {
+                            console.log("🧪 Store tasks after refresh:", store.tasks.length);
+                        }, 100);
+                    }
+                } catch (refreshError) {
+                    console.error("❌ Error refreshing tasks:", refreshError);
+                }
+            } else {
+                console.error("❌ Missing task in API response:", responseJson);
+            }
             
-            // Clear the form and draft
-            discardDraft();
+            // Clear the form
+            setTitle("");
+            setDescription("");
+            setPriority(0);
+            setDueDate("");
+            setSelectedCategories([]);
+            setEmotion("");
+            setEstimatedDuration(0);
+            setAudioURL(null);
             
-            // Close the form
-            if (onClose) onClose();
+            // Clear the draft
+            localStorage.removeItem("taskDraft");
+            setHasDraft(false);
+            
+            // Close the form if a callback is provided
+            if (onClose) {
+                onClose();
+            }
         } catch (err) {
+            console.error("❌ Error submitting task:", err);
             setError(err instanceof Error ? err.message : "An error occurred");
-            console.error("Error creating task:", err);
         } finally {
             setIsSubmitting(false);
         }

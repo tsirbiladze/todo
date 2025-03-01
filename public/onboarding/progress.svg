@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" fill="none">
+  <rect width="200" height="200" rx="10" fill="#f3f4f6" />
+  <rect x="40" y="140" width="25" height="30" rx="2" fill="#6366f1" />
+  <rect x="75" y="110" width="25" height="60" rx="2" fill="#6366f1" />
+  <rect x="110" y="80" width="25" height="90" rx="2" fill="#6366f1" />
+  <rect x="145" y="50" width="25" height="120" rx="2" fill="#6366f1" />
+  <path d="M40 40L160 40" stroke="#6366f1" stroke-width="2" stroke-linecap="round" />
+  <path d="M40 180L160 180" stroke="#6366f1" stroke-width="2" stroke-linecap="round" />
+  <path d="M40 40L40 180" stroke="#6366f1" stroke-width="2" stroke-linecap="round" />
+  <path d="M50 50L170 50" stroke="#6366f1" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 2" />
+  <path d="M50 80L170 80" stroke="#6366f1" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 2" />
+  <path d="M50 110L170 110" stroke="#6366f1" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 2" />
+  <path d="M50 140L170 140" stroke="#6366f1" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 2" />
+</svg> 

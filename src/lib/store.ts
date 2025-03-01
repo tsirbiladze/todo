@@ -230,8 +230,71 @@ export const useStore = create<TodoStore>()(
       searchQuery: '',
 
       // Task Actions
-      setTasks: (tasks) => set({ tasks }),
-      addTask: (task) => set((state) => ({ tasks: [...(state.tasks || []), task] })),
+      setTasks: (tasks) => {
+        console.log('💾 Setting tasks in store:', tasks);
+        console.log('🔢 Tasks count:', Array.isArray(tasks) ? tasks.length : 'not an array');
+        
+        // Ensure we're working with an array
+        if (!Array.isArray(tasks)) {
+          console.error('❌ setTasks received non-array:', tasks);
+          return;
+        }
+        
+        // Ensure each task has an id
+        const validTasks = tasks.filter(task => {
+          if (!task.id) {
+            console.error('❌ Task missing ID:', task);
+            return false;
+          }
+          return true;
+        });
+        
+        console.log(`✅ Setting ${validTasks.length} valid tasks in store`);
+        set({ tasks: validTasks });
+        
+        // Verify the update worked
+        setTimeout(() => {
+          const currentTasks = get().tasks;
+          console.log(`🧪 Store now has ${currentTasks.length} tasks after setTasks`);
+        }, 50);
+      },
+      
+      addTask: (task) => {
+        console.log('➕ Adding task to store:', task);
+        
+        // Validate the task
+        if (!task || !task.id) {
+          console.error('❌ Cannot add invalid task:', task);
+          return;
+        }
+        
+        set((state) => {
+          // Check if task already exists
+          const existingTaskIndex = state.tasks.findIndex(t => t.id === task.id);
+          
+          let newTasks;
+          if (existingTaskIndex >= 0) {
+            // Update existing task
+            console.log(`🔄 Task ${task.id} already exists, updating it`);
+            newTasks = [...state.tasks];
+            newTasks[existingTaskIndex] = task;
+          } else {
+            // Add new task
+            console.log(`➕ Adding new task ${task.id}`);
+            newTasks = [...(state.tasks || []), task];
+          }
+          
+          console.log('🔢 New tasks array length:', newTasks.length);
+          return { tasks: newTasks };
+        });
+        
+        // Verify the update worked
+        setTimeout(() => {
+          const currentTasks = get().tasks;
+          console.log(`🧪 Store now has ${currentTasks.length} tasks after addTask`);
+          console.log(`🔍 Added task exists in store: ${currentTasks.some(t => t.id === task.id)}`);
+        }, 50);
+      },
       updateTask: async (taskId, data) => {
         // Store the original task for potential rollback
         const originalTasks = get().tasks;

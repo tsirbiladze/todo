@@ -96,15 +96,17 @@ export function TaskCalendarView({ tasks, onComplete, onUpdate, onDelete, onRefr
   const tasksByDate = useMemo(() => {
     const grouped: Record<string, TaskWithRelations[]> = {};
     
-    tasks.forEach(task => {
-      if (task.dueDate) {
-        const dateStr = new Date(task.dueDate).toDateString();
-        if (!grouped[dateStr]) {
-          grouped[dateStr] = [];
+    if (tasks) {
+      tasks.forEach(task => {
+        if (task.dueDate) {
+          const dateStr = new Date(task.dueDate).toDateString();
+          if (!grouped[dateStr]) {
+            grouped[dateStr] = [];
+          }
+          grouped[dateStr].push(task);
         }
-        grouped[dateStr].push(task);
-      }
-    });
+      });
+    }
     
     return grouped;
   }, [tasks]);

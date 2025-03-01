@@ -58,11 +58,11 @@ export default function FocusPage() {
           throw new Error('Failed to fetch tasks');
         }
         const data = await response.json();
-        setTasks(data.tasks);
+        setTasks(data.tasks || []);
         
         // Filter tasks
-        const completed = data.tasks.filter((task: Task) => task.status === 'COMPLETED');
-        const incomplete = data.tasks.filter((task: Task) => task.status !== 'COMPLETED');
+        const completed = data.tasks?.filter((task: Task) => task.status === 'COMPLETED') || [];
+        const incomplete = data.tasks?.filter((task: Task) => task.status !== 'COMPLETED') || [];
         
         // Sort incomplete tasks by priority
         const sortedIncomplete = [...incomplete].sort((a, b) => {

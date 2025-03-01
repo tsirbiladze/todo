@@ -10,6 +10,13 @@ import { LoadingIndicator } from "@/components/ui/LoadingIndicator";
 import { EmptyState } from "@/components/EmptyState";
 import { Transition, Dialog } from "@headlessui/react";
 import { useTranslation } from "@/lib/i18n";
+import { TopBar } from "@/components/TopBar";
+import { SideNav } from "@/components/SideNav";
+import { UserWelcome } from "@/components/UserWelcome";
+import { Modal } from "@/components/ui/Modal";
+import { Onboarding } from "@/components/Onboarding";
+import { QuickCaptureButton } from "@/components/QuickCaptureButton";
+import TaskDebugHelper from "@/components/TaskDebugHelper";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -23,6 +30,13 @@ export default function Home() {
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [isFirstVisit, setIsFirstVisit] = useState(() => {
+    // Check localStorage to see if this is the first visit
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem("onboardingComplete") !== "true";
+    }
+    return true;
+  });
 
   // Prevent body scrolling when modal is open
   useEffect(() => {
@@ -40,15 +54,52 @@ export default function Home() {
       try {
         setIsTasksLoading(true);
         setError(null);
+        console.log('🔍 Home: Fetching tasks from API...');
+        
         const response = await fetch("/api/tasks");
         if (!response.ok) {
-          throw new Error("Failed to fetch tasks");
+          throw new Error(`Failed to fetch tasks: ${response.status} ${response.statusText}`);
         }
-        const data = await response.json();
-        setTasks(data.tasks);
+        
+        const responseData = await response.json();
+        console.log('📦 Home: API response:', responseData);
+        
+        // Check if response has the expected structure
+        if (!responseData || typeof responseData !== 'object') {
+          console.error('❌ Home: Invalid API response format', responseData);
+          throw new Error('Invalid API response format');
+        }
+        
+        // The API returns data in a nested "data" property due to successResponse function
+        const data = responseData.data;
+        
+        if (!data) {
+          console.error('❌ Home: No data in API response', responseData);
+          // Initialize with empty array
+          setTasks([]);
+          return;
+        }
+        
+        // Check if tasks exist and are an array
+        if (data.tasks && Array.isArray(data.tasks)) {
+          console.log(`✅ Home: Successfully fetched ${data.tasks.length} tasks`);
+          setTasks(data.tasks);
+        } else {
+          // If response has a direct array of tasks without the "tasks" property
+          if (Array.isArray(data)) {
+            console.log(`✅ Home: Successfully fetched ${data.length} tasks`);
+            setTasks(data);
+          } else {
+            console.error('❌ Home: Tasks not found in API response or not an array', data);
+            // Initialize with empty array
+            setTasks([]);
+          }
+        }
       } catch (error) {
-        console.error("Error fetching tasks:", error);
+        console.error("❌ Home: Error fetching tasks:", error);
         setError(error instanceof Error ? error.message : "Failed to load data");
+        // Initialize with empty array on error
+        setTasks([]);
       } finally {
         setIsTasksLoading(false);
       }
@@ -72,11 +123,16 @@ export default function Home() {
           }
           throw new Error("Failed to fetch categories");
         }
-        const categories = await response.json();
-        setCategories(categories);
+        const responseData = await response.json();
+        
+        // The API returns data in a nested "data" property
+        const categories = responseData.data || [];
+        
+        setCategories(Array.isArray(categories) ? categories : []);
       } catch (error) {
         console.error("Error fetching categories:", error);
         // We don't set error here as tasks are more critical than categories
+        setCategories([]);
       } finally {
         setIsCategoriesLoading(false);
       }
@@ -93,138 +149,55 @@ export default function Home() {
     setRetryCount(prev => prev + 1);
   };
 
-  return (
-    <main className="min-h-screen pt-4">
-      {/* Initial Loading State */}
-      {isLoading && (
-        <div className="flex flex-col items-center justify-center h-60 mt-8">
-          <LoadingIndicator size="lg" variant="dots" text={t('common.loading')} />
-        </div>
-      )}
+  const handleOnboardingComplete = () => {
+    setIsFirstVisit(false);
+    localStorage.setItem("onboardingComplete", "true");
+  };
 
-      {/* Error State */}
-      {error && !isLoading && (
-        <div className="max-w-4xl mx-auto mt-12 px-4">
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600 dark:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div className="ml-3 flex-1">
-                <h3 className="text-lg font-medium text-red-800 dark:text-red-300">
-                  Oops! Something went wrong
-                </h3>
-                <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p>
-                <div className="mt-4">
+  return (
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden">
+      <SideNav />
+      
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <TopBar onAddTask={() => setIsAddTaskOpen(true)} />
+        
+        <main className="flex-1 overflow-auto p-4">
+          {isFirstVisit && <Onboarding onComplete={handleOnboardingComplete} />}
+          
+          {!isFirstVisit && (
+            <>
+              <UserWelcome />
+              
+              {error ? (
+                <div className="text-center my-8">
+                  <p className="text-red-500 mb-4">{error}</p>
                   <button
-                    type="button"
                     onClick={handleRetry}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-700 dark:hover:bg-red-600"
+                    className="px-4 py-2 bg-primary text-white rounded-md"
                   >
-                    <ArrowPathIcon className="h-4 w-4 mr-2" />
-                    Try Again
+                    Retry
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      {!isLoading && !error && (
-        <>
-          <div className="max-w-4xl mx-auto px-4 pt-4">
-            <div className="flex justify-between items-center mb-4">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {focusMode ? t('focus.title') : t('task.filter.all')}
-              </h1>
-              <div className="flex space-x-2">
-                <button
-                  type="button"
-                  onClick={() => toggleFocusMode()}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    focusMode
-                      ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
-                      : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  }`}
-                >
-                  {focusMode ? t('focus.end') : t('focus.title')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAddTaskOpen(true)}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-indigo-700 dark:hover:bg-indigo-600"
-                >
-                  <PlusIcon className="h-4 w-4 mr-1.5" />
-                  {t('task.createTask')}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {tasks.length === 0 ? (
-            <div className="max-w-4xl mx-auto px-4 py-12">
-              <EmptyState 
-                type="tasks"
-                onAction={() => setIsAddTaskOpen(true)}
-              />
-            </div>
-          ) : (
-            <TaskList />
+              ) : (
+                <TaskList />
+              )}
+            </>
           )}
-
-          {/* Use Transition and Dialog components for smooth animation */}
-          <Transition appear show={isAddTaskOpen} as={Fragment}>
-            <Dialog 
-              as="div" 
-              className="relative z-50" 
-              onClose={() => {
-                setIsAddTaskOpen(false);
-                document.body.classList.remove("modal-open");
-              }}
-              initialFocus={undefined}
-            >
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0"
-                enterTo="opacity-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100"
-                leaveTo="opacity-0"
-              >
-                <div className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm" />
-              </Transition.Child>
-
-              <div className="fixed inset-0 overflow-y-auto">
-                <div className="flex min-h-full items-center justify-center p-4 text-center">
-                  <Transition.Child
-                    as={Fragment}
-                    enter="ease-out duration-300"
-                    enterFrom="opacity-0 scale-95"
-                    enterTo="opacity-100 scale-100"
-                    leave="ease-in duration-200"
-                    leaveFrom="opacity-100 scale-100"
-                    leaveTo="opacity-0 scale-95"
-                  >
-                    <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 dark:border dark:border-gray-700 p-6 text-left align-middle shadow-xl transition-all">
-                      <AddTaskForm
-                        onClose={() => {
-                          setIsAddTaskOpen(false);
-                          document.body.classList.remove("modal-open");
-                        }}
-                      />
-                    </Dialog.Panel>
-                  </Transition.Child>
-                </div>
-              </div>
-            </Dialog>
-          </Transition>
-        </>
-      )}
-    </main>
+        </main>
+      </div>
+      
+      <Modal
+        isOpen={isAddTaskOpen}
+        onClose={() => setIsAddTaskOpen(false)}
+        title=""
+      >
+        <AddTaskForm onClose={() => setIsAddTaskOpen(false)} />
+      </Modal>
+      
+      <QuickCaptureButton onClick={() => setIsAddTaskOpen(true)} />
+      
+      {/* Add the debug helper component */}
+      <TaskDebugHelper />
+    </div>
   );
 }

@@ -1,8 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { categorySchema, validateData } from '@/lib/server/validation';
 import { logger } from '@/lib/logger';
+import {
+  getAuthenticatedUserId,
+  verifyResourceOwnership,
+  errorResponse,
+  successResponse,
+  unauthorizedResponse,
+  notFoundResponse,
+  handleCommonErrors,
+  HttpStatus
+} from '@/lib/server/api';
 
 type RouteParams = {
   params: {
@@ -10,110 +19,90 @@ type RouteParams = {
   };
 };
 
-// Helper to get authenticated user ID with type safety
-async function getAuthenticatedUserId(): Promise<string | null> {
-  try {
-    const session = await getServerSession(authOptions);
-    return session?.user?.id || null;
-  } catch (error) {
-    logger.error('Error getting user session:', {
-      component: 'api/categories/[categoryId]',
-      data: error
-    });
-    return null;
-  }
-}
-
-// Generic error response builder
-function errorResponse(message: string, statusCode: number = 400): NextResponse {
-  return NextResponse.json(
-    { error: message },
-    { status: statusCode }
-  );
-}
-
-// Check if a category belongs to the authenticated user
-async function verifyCategoryOwnership(categoryId: string, userId: string): Promise<boolean> {
-  const category = await prisma.category.findUnique({
-    where: { id: categoryId },
-    select: { userId: true },
-  });
-  
-  return category?.userId === userId;
-}
-
 // GET /api/categories/[categoryId] - Get a single category by ID
 export async function GET(
-  request: Request,
+  req: NextRequest,
   { params }: RouteParams
-) {
+): Promise<NextResponse> {
   try {
     const userId = await getAuthenticatedUserId();
     
     if (!userId) {
-      return errorResponse('Unauthorized', 401);
+      return unauthorizedResponse();
     }
 
-    const categoryId = params.categoryId;
+    const { categoryId } = params;
     
-    // Verify the category exists and belongs to the user
+    // Get the category with tasks count
     const category = await prisma.category.findUnique({
       where: { id: categoryId },
+      include: {
+        _count: {
+          select: { tasks: true }
+        }
+      }
     });
 
     if (!category) {
-      return errorResponse('Category not found', 404);
+      return notFoundResponse('Category');
     }
 
     if (category.userId !== userId) {
-      return errorResponse('Unauthorized', 401);
+      return errorResponse('You do not have permission to access this category', HttpStatus.FORBIDDEN);
     }
 
-    return NextResponse.json(category);
-  } catch (error) {
-    logger.error('Error fetching category:', {
-      component: 'api/categories/[categoryId]',
-      data: error
+    return successResponse({ 
+      category: {
+        ...category,
+        taskCount: category._count.tasks
+      }
     });
-    return errorResponse('Failed to fetch category', 500);
+  } catch (error) {
+    return handleCommonErrors(error, 'api/categories/[categoryId]/GET');
   }
 }
 
 // PUT /api/categories/[categoryId] - Update a category
 export async function PUT(
-  request: Request,
+  req: NextRequest,
   { params }: RouteParams
-) {
+): Promise<NextResponse> {
   try {
     const userId = await getAuthenticatedUserId();
     
     if (!userId) {
-      return errorResponse('Unauthorized', 401);
+      return unauthorizedResponse();
     }
 
-    const categoryId = params.categoryId;
+    const { categoryId } = params;
     
     // Check if the category exists and belongs to the user
-    const categoryExists = await verifyCategoryOwnership(categoryId, userId);
+    const isOwner = await verifyResourceOwnership(
+      categoryId,
+      userId,
+      prisma.category
+    );
     
-    if (!categoryExists) {
-      return errorResponse('Category not found or unauthorized', 404);
+    if (!isOwner) {
+      return notFoundResponse('Category');
     }
 
-    const data = await request.json();
+    const body = await req.json();
     
-    // Validate fields
-    if (data.name && data.name.length > 30) {
-      return errorResponse('Category name must be 30 characters or less', 400);
+    // Validate the request body
+    const validation = await validateData(categorySchema.partial(), body);
+    
+    if (!validation.success) {
+      return errorResponse(`Validation error: ${validation.error}`, HttpStatus.BAD_REQUEST);
     }
 
     // Check if updated name conflicts with existing category
-    if (data.name) {
+    if (validation.data.name) {
       const existingCategory = await prisma.category.findFirst({
         where: {
           userId,
           name: {
-            equals: data.name,
+            equals: validation.data.name,
             mode: 'insensitive', // Case insensitive comparison
           },
           id: {
@@ -123,79 +112,148 @@ export async function PUT(
       });
 
       if (existingCategory) {
-        return errorResponse('A category with this name already exists', 400);
+        return errorResponse(
+          'A category with this name already exists', 
+          HttpStatus.CONFLICT
+        );
       }
     }
 
     // Update the category
-    const updatedCategory = await prisma.category.update({
+    const category = await prisma.category.update({
       where: { id: categoryId },
-      data: {
-        name: data.name !== undefined ? data.name : undefined,
-        color: data.color !== undefined ? data.color : undefined,
-      },
+      data: validation.data,
+      include: {
+        _count: {
+          select: { tasks: true }
+        }
+      }
     });
 
-    return NextResponse.json({ category: updatedCategory });
-  } catch (error) {
-    logger.error('Error updating category:', {
-      component: 'api/categories/[categoryId]',
-      data: error
+    return successResponse({ 
+      category: {
+        ...category,
+        taskCount: category._count.tasks
+      }
     });
-    return errorResponse('Failed to update category', 500);
+  } catch (error) {
+    return handleCommonErrors(error, 'api/categories/[categoryId]/PUT');
+  }
+}
+
+// PATCH /api/categories/[categoryId] - Partially update a category
+export async function PATCH(
+  req: NextRequest,
+  { params }: RouteParams
+): Promise<NextResponse> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    
+    if (!userId) {
+      return unauthorizedResponse();
+    }
+
+    const { categoryId } = params;
+    
+    // Check if the category exists and belongs to the user
+    const isOwner = await verifyResourceOwnership(
+      categoryId,
+      userId,
+      prisma.category
+    );
+    
+    if (!isOwner) {
+      return notFoundResponse('Category');
+    }
+
+    const body = await req.json();
+    
+    // Validate the request body
+    const validation = await validateData(categorySchema.partial(), body);
+    
+    if (!validation.success) {
+      return errorResponse(`Validation error: ${validation.error}`, HttpStatus.BAD_REQUEST);
+    }
+
+    // Check if updated name conflicts with existing category
+    if (validation.data.name) {
+      const existingCategory = await prisma.category.findFirst({
+        where: {
+          userId,
+          name: {
+            equals: validation.data.name,
+            mode: 'insensitive', // Case insensitive comparison
+          },
+          id: {
+            not: categoryId, // Exclude current category
+          },
+        },
+      });
+
+      if (existingCategory) {
+        return errorResponse(
+          'A category with this name already exists', 
+          HttpStatus.CONFLICT
+        );
+      }
+    }
+
+    // Update the category
+    const category = await prisma.category.update({
+      where: { id: categoryId },
+      data: validation.data,
+      include: {
+        _count: {
+          select: { tasks: true }
+        }
+      }
+    });
+
+    return successResponse({ 
+      category: {
+        ...category,
+        taskCount: category._count.tasks
+      }
+    });
+  } catch (error) {
+    return handleCommonErrors(error, 'api/categories/[categoryId]/PATCH');
   }
 }
 
 // DELETE /api/categories/[categoryId] - Delete a category
 export async function DELETE(
-  request: Request,
+  req: NextRequest,
   { params }: RouteParams
-) {
+): Promise<NextResponse> {
   try {
     const userId = await getAuthenticatedUserId();
     
     if (!userId) {
-      return errorResponse('Unauthorized', 401);
+      return unauthorizedResponse();
     }
 
-    const categoryId = params.categoryId;
+    const { categoryId } = params;
     
     // Check if the category exists and belongs to the user
-    const categoryExists = await verifyCategoryOwnership(categoryId, userId);
+    const isOwner = await verifyResourceOwnership(
+      categoryId,
+      userId,
+      prisma.category
+    );
     
-    if (!categoryExists) {
-      return errorResponse('Category not found or unauthorized', 404);
+    if (!isOwner) {
+      return notFoundResponse('Category');
     }
 
-    // Option 1: Hard delete the category (deletes the record completely)
+    // Delete the category
     await prisma.category.delete({
       where: { id: categoryId },
     });
 
-    // Optional: Remove this category from all tasks
-    await prisma.task.update({
-      where: {
-        categories: {
-          some: {
-            id: categoryId
-          }
-        }
-      },
-      data: {
-        categories: {
-          disconnect: {
-            id: categoryId
-          }
-        }
-      }
+    return successResponse({ 
+      message: 'Category deleted successfully'
     });
-
-    return NextResponse.json({ message: 'Category deleted successfully' });
   } catch (error) {
-    logger.error('Error deleting category:', {
-      component: 'api/categories/[categoryId]',
-      data: error
-    });
-    return errorResponse('Failed to delete category', 500);
+    return handleCommonErrors(error, 'api/categories/[categoryId]/DELETE');
   }
 } 

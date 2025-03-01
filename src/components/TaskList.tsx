@@ -22,7 +22,7 @@ import { EditTaskForm } from './EditTaskForm';
 import { priorityToNumber, priorityToLabel } from "@/lib/type-conversions";
 import React from 'react';
 import ErrorBoundary from './ErrorBoundary';
-import { TaskApi } from '@/lib/api';
+import { TaskApi, CategoryApi, FocusSessionApi } from '@/lib/api';
 import { EmotionTracker } from './EmotionTracker';
 import { MoodSuggestions } from './MoodSuggestions';
 import { formatDate, DATE_FORMATS } from "@/lib/date-utils";
@@ -58,9 +58,38 @@ export function TaskList() {
 
   const tasks = useStore((state) => state.tasks);
   const setTasks = useStore((state) => state.setTasks);
+  const addTask = useStore((state) => state.addTask);
   const updateTask = useStore((state) => state.updateTask);
   const deleteTask = useStore((state) => state.deleteTask);
-  const createTask = useStore((state) => state.createTask);
+  
+  // New createTask function that combines API call with store update
+  const createTask = useCallback(async (taskData) => {
+    try {
+      console.log('Creating new task:', taskData);
+      const response = await TaskApi.createTask(taskData);
+      
+      if (response.error) {
+        console.error('Error creating task:', response.error);
+        toast.error('Failed to create task: ' + response.error);
+        return null;
+      }
+      
+      if (response.data?.task) {
+        console.log('Task created successfully:', response.data.task);
+        addTask(response.data.task);
+        toast.success('Task created successfully');
+        return response.data.task;
+      } else {
+        console.error('No task data in response:', response);
+        toast.error('Failed to create task: Invalid response');
+        return null;
+      }
+    } catch (error) {
+      console.error('Error creating task:', error);
+      toast.error('Failed to create task: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      return null;
+    }
+  }, [addTask]);
 
   // Fetch tasks function - using the new API utilities
   const fetchTasks = useCallback(async () => {
@@ -68,23 +97,65 @@ export function TaskList() {
       setIsLoading(true);
       setIsError(null);
       
+      console.log('🔍 TaskList: Starting to fetch tasks...');
       const response = await TaskApi.getAllTasks();
+      console.log('📡 TaskList: Raw API response:', response);
       
       if (response.error) {
+        console.error('❌ TaskList: API response error:', response.error);
         throw new Error(response.error);
       }
       
-      // Extract tasks from the response data
-      const tasksData = response.data?.tasks || [];
-      setTasks(tasksData);
+      // Validate response data
+      if (!response.data) {
+        console.error('❌ TaskList: No data in API response:', response);
+        throw new Error('No data returned from API');
+      }
+      
+      // Extract tasks from the response data with safety check
+      const tasksData = response.data.tasks;
+      
+      // Ensure tasks is always an array
+      const validTasksData = Array.isArray(tasksData) ? tasksData : [];
+      
+      console.log('📋 TaskList: Tasks data fetched:', validTasksData);
+      console.log('🔢 TaskList: Tasks data length:', validTasksData.length);
+      
+      // Check if tasks actually exist in the response
+      if (validTasksData.length === 0) {
+        console.warn('⚠️ TaskList: No tasks returned from API - checking response format');
+        console.log('🔍 TaskList: Full response:', JSON.stringify(response));
+      } else {
+        console.log('✅ TaskList: First task example:', JSON.stringify(validTasksData[0]));
+      }
+      
+      // Direct store update for most reliable results
+      console.log('💾 TaskList: Directly updating store state...');
+      const store = useStore.getState();
+      store.setTasks(validTasksData);
+      
+      // Verify state after setting
+      setTimeout(() => {
+        const storeState = useStore.getState();
+        console.log('🧪 TaskList: Store tasks after setting:', storeState.tasks);
+        console.log('🔢 TaskList: Store tasks length:', storeState.tasks.length);
+        console.log('🔄 TaskList: Component tasks state:', tasks);
+        console.log('🔄 TaskList: Component tasks length:', tasks.length);
+      }, 100);
     } catch (error) {
-      console.error('Error fetching tasks:', error);
+      console.error('❌ TaskList: Error fetching tasks:', error);
       setIsError(error instanceof Error ? error.message : 'Failed to fetch tasks');
-      // On error, don't clear the current tasks - leave the existing state
+      
+      // Always ensure we have a valid array in the store, even on error
+      const store = useStore.getState();
+      if (!Array.isArray(store.tasks)) {
+        console.log('🛠️ TaskList: Initializing store with empty tasks array after error');
+        store.setTasks([]);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [setTasks]);
+  }, [tasks]);
 
   // Fetch tasks when component mounts
   useEffect(() => {
@@ -105,21 +176,31 @@ export function TaskList() {
   const filteredAndSortedTasks = useMemo(() => {
     // Ensure tasks is an array before spreading
     if (!Array.isArray(tasks)) {
+      console.log('Tasks is not an array:', tasks);
       return [];
     }
 
-    let result = [...tasks];
+    console.log('Tasks array in filteredAndSortedTasks:', tasks);
+    console.log('Tasks length:', tasks.length);
+
+    // Filter out undefined or null tasks first
+    let result = tasks.filter(task => task != null);
+    console.log('Tasks after null filtering:', result.length);
 
     // Apply search filter
     if (searchQuery) {
       result = result.filter(task => 
-        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        task.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         task.description?.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      console.log('Tasks after search filtering:', result.length);
     }
 
     // Apply completion filter
     result = result.filter((task) => {
+      // Check if task exists before accessing properties
+      if (!task) return false;
+      
       const isCompleted = !!task.completedAt;
       switch (filter) {
         case 'completed':
@@ -130,9 +211,14 @@ export function TaskList() {
           return true;
       }
     });
+    console.log('Tasks after completion filtering:', result.length);
+    console.log('Current filter:', filter);
 
     // Apply sorting
     result.sort((a, b) => {
+      // Safety check for undefined tasks
+      if (!a || !b) return 0;
+      
       switch (sortBy) {
         case 'dueDate':
           if (!a.dueDate) return 1;
@@ -149,18 +235,32 @@ export function TaskList() {
       }
     });
 
+    console.log('Final filtered and sorted tasks:', result.length);
+    if (result.length > 0) {
+      console.log('Sample first task:', result[0]);
+    }
+    
     return result;
   }, [tasks, filter, sortBy, searchQuery]);
 
   const groupedTasks = useMemo(() => {
     // Ensure filteredAndSortedTasks is an array
     if (!Array.isArray(filteredAndSortedTasks)) {
+      console.log('filteredAndSortedTasks is not an array:', filteredAndSortedTasks);
       return { 'All Tasks': [] };
     }
 
-    if (groupBy === 'none') return { 'All Tasks': filteredAndSortedTasks };
+    console.log('filteredAndSortedTasks length in groupedTasks:', filteredAndSortedTasks.length);
 
-    return filteredAndSortedTasks.reduce((groups: Record<string, TaskType[]>, task) => {
+    if (groupBy === 'none') {
+      console.log('Using "none" grouping, task count:', filteredAndSortedTasks.length);
+      return { 'All Tasks': filteredAndSortedTasks };
+    }
+
+    const groups = filteredAndSortedTasks.reduce((groups: Record<string, TaskType[]>, task) => {
+      // Skip if task is null or undefined
+      if (!task) return groups;
+      
       let groupKey = '';
       switch (groupBy) {
         case 'category':
@@ -190,6 +290,11 @@ export function TaskList() {
       groups[groupKey].push(task);
       return groups;
     }, {});
+
+    console.log('Task groups created:', Object.keys(groups));
+    console.log('Tasks per group:', Object.keys(groups).map(key => `${key}: ${groups[key].length}`));
+    
+    return groups;
   }, [filteredAndSortedTasks, groupBy]);
 
   // Filter tasks based on crisis mode
@@ -518,18 +623,28 @@ export function TaskList() {
             {/* Tasks Groups */}
             <div className="space-y-6">
               {viewMode === 'list' && (
-                Object.entries(isCrisisMode ? { 'Crisis Items': crisisModeTasks } : groupedTasks).map(([group, tasks]) => (
-                  <div key={group} className="mb-6">
-                    <h2 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300">{group}</h2>
-                    {tasks.length === 0 ? (
-                      <p className="text-gray-500 dark:text-gray-400">No tasks found</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {tasks.map(renderTask)}
-                      </div>
-                    )}
-                  </div>
-                ))
+                Object.entries(isCrisisMode ? { 'Crisis Items': crisisModeTasks } : groupedTasks).map(([group, tasks]) => {
+                  console.log(`Rendering group "${group}" with ${tasks.length} tasks`);
+                  if (tasks.length > 0) {
+                    console.log(`First task in group "${group}":`, tasks[0]);
+                  }
+                  
+                  return (
+                    <div key={group} className="mb-6">
+                      <h2 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300">{group}</h2>
+                      {tasks.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400">No tasks found</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {tasks.map(task => {
+                            console.log(`Rendering task: ${task.id} - ${task.title}`);
+                            return renderTask(task);
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
 
               {viewMode === 'board' && (
@@ -611,7 +726,7 @@ export function TaskList() {
                         parentId: selectedTask.id,
                         goalId: selectedTask.goalId
                       };
-                      // Call your createTask function
+                      // Call our fixed createTask function
                       createTask(newTask);
                     });
                     toast.success(`Added ${subtasks.length} subtasks`);
